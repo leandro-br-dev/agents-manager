@@ -171,6 +171,40 @@ export function initDatabase() {
     }
   }
 
+  // Create chat_sessions table
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        project_id TEXT,
+        workspace_path TEXT NOT NULL,
+        environment_id TEXT,
+        sdk_session_id TEXT,
+        status TEXT DEFAULT 'idle',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+    `)
+  } catch (e) {
+    // Table already exists - ignore error
+  }
+
+  // Create chat_messages table
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+    `)
+  } catch (e) {
+    // Table already exists - ignore error
+  }
+
   console.log('Database initialized successfully')
 }
 

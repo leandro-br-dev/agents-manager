@@ -8,6 +8,7 @@ import daemonRouter from './routes/daemon.js'
 import projectsRouter from './routes/projects.js'
 import nativeSkillsRouter from './routes/nativeSkills.js'
 import quickActionsRouter from './routes/quickActions.js'
+import chatSessionsRouter from './routes/chatSessions.js'
 import { db } from './db/index.js'
 
 const app = express()
@@ -74,6 +75,9 @@ app.use('/api/native-skills', nativeSkillsRouter)
 
 // Quick actions routes
 app.use('/api/quick-actions', quickActionsRouter)
+
+// Chat sessions routes
+app.use('/api/sessions', chatSessionsRouter)
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
