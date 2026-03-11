@@ -21,30 +21,44 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
   const { data: projects } = useGetProjects()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
-  const [newPath, setNewPath] = useState('')
   const [newBaseUrl, setNewBaseUrl] = useState('')
   const [newProjectId, setNewProjectId] = useState('')
   const createWorkspace = useCreateWorkspace()
 
+  const canCreate = newName.trim().length > 0 && newProjectId.length > 0
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canCreate) return
+
     createWorkspace.mutate(
       {
         name: newName,
-        project_path: newPath || undefined,
         anthropic_base_url: newBaseUrl || undefined,
-        project_id: newProjectId || undefined
+        project_id: newProjectId
       },
       {
         onSuccess: () => {
           setNewName('')
-          setNewPath('')
           setNewBaseUrl('')
           setNewProjectId('')
           setShowNewForm(false)
         },
       }
     )
+  }
+
+  const slugify = (name: string) => {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  }
+
+  const getPathPreview = () => {
+    if (!newProjectId || !newName) return null
+    const proj = projects?.find(p => p.id === newProjectId)
+    if (!proj) return null
+    const projectSlug = slugify(proj.name)
+    const agentSlug = slugify(newName)
+    return `projects/${projectSlug}/agents/${agentSlug}/`
   }
 
   if (isLoading) return <div className="p-8">Loading...</div>
@@ -66,38 +80,47 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
         <Card className="mb-6">
           <form onSubmit={handleCreate}>
             <div className="grid grid-cols-2 gap-4 mb-4">
-              <Input
-                label="Name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                required
-                placeholder="my-agent"
-              />
               <Select
-                label="Project"
+                label="Project *"
                 value={newProjectId}
                 onChange={(e) => setNewProjectId(e.target.value)}
+                required
               >
-                <option value="">No project (standalone agent)</option>
+                <option value="" disabled>Select a project...</option>
                 {projects?.map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </Select>
-              <Input
-                label="Project Path"
-                value={newPath}
-                onChange={(e) => setNewPath(e.target.value)}
-                placeholder="/path/to/project"
-              />
+              <div>
+                <Input
+                  label="Agent name *"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  required
+                  placeholder="frontend-dev"
+                />
+                {getPathPreview() && (
+                  <p className="text-xs font-mono text-gray-400 mt-1">
+                    {getPathPreview()}
+                  </p>
+                )}
+              </div>
               <Input
                 label="Anthropic Base URL"
                 value={newBaseUrl}
                 onChange={(e) => setNewBaseUrl(e.target.value)}
                 placeholder="http://localhost:8083"
+                className="col-span-2"
               />
             </div>
             <div className="flex gap-2">
-              <Button type="submit" variant="primary">Create</Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!canCreate || createWorkspace.isPending}
+              >
+                {createWorkspace.isPending ? 'Creating...' : 'Create Agent'}
+              </Button>
               <Button type="button" variant="secondary" onClick={() => setShowNewForm(false)}>Cancel</Button>
             </div>
           </form>
@@ -156,6 +179,15 @@ function WorkspaceCard({
 
   const badge = getBaseUrlBadge()
 
+  // Extract project name from path
+  // Path format: projects/{project-slug}/agents/{agent-name}/
+  const getProjectSlug = () => {
+    const match = workspace.path.match(/projects\/([^/]+)\//)
+    return match ? match[1] : null
+  }
+
+  const projectSlug = getProjectSlug()
+
   return (
     <>
       <div onClick={onClick} className="hover:shadow-md transition-shadow cursor-pointer">
@@ -173,6 +205,14 @@ function WorkspaceCard({
               </Button>
             </div>
           </div>
+
+          {projectSlug && (
+            <div className="mb-2">
+              <span className="text-xs font-mono text-gray-400">
+                Project: {projectSlug}
+              </span>
+            </div>
+          )}
 
           <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
             <FolderOpen size={14} />
