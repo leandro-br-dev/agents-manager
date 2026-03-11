@@ -117,6 +117,26 @@ export function initDatabase() {
     )
   `)
 
+  // Create project_agents table (links projects to workspace/agent paths)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_agents (
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      workspace_path TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (project_id, workspace_path)
+    )
+  `)
+
+  // Add project_id column to plans table if it doesn't exist
+  try {
+    db.exec('ALTER TABLE plans ADD COLUMN project_id TEXT')
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding project_id column:', e.message)
+    }
+  }
+
   console.log('Database initialized successfully')
 }
 

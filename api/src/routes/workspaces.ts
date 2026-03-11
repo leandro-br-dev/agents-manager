@@ -2,6 +2,7 @@ import { Router } from 'express'
 import fs from 'fs'
 import path from 'path'
 import { authenticateToken } from '../middleware/auth.js'
+import { db } from '../db/index.js'
 
 const router = Router()
 
@@ -80,8 +81,17 @@ function getIdParam(reqParams: any): string {
 
 // GET /api/workspaces — listar todos os projetos
 router.get('/', authenticateToken, (req, res) => {
-  const workspaces = listAllWorkspaces()
-  return res.json({ data: workspaces, error: null })
+  const all = listAllWorkspaces()
+  const { project_id } = req.query
+  if (project_id) {
+    const linked = db.prepare(
+      'SELECT workspace_path FROM project_agents WHERE project_id = ?'
+    ).all(project_id as string) as any[]
+    const linkedPaths = new Set(linked.map(l => l.workspace_path))
+    const filtered = all.filter(ws => linkedPaths.has(ws.path))
+    return res.json({ data: filtered, error: null })
+  }
+  return res.json({ data: all, error: null })
 })
 
 // GET /api/workspaces/:id — detalhes de um workspace
@@ -131,7 +141,7 @@ router.get('/:id', authenticateToken, (req, res) => {
 
 // POST /api/workspaces — criar novo workspace
 router.post('/', authenticateToken, (req, res) => {
-  const { name, project_path, anthropic_base_url = 'http://localhost:8083' } = req.body
+  const { name, project_path, anthropic_base_url = 'http://localhost:8083', project_id } = req.body
   if (!name) return res.status(400).json({ data: null, error: 'name is required' })
 
   const coderPath = getWorkspacePath(name)
@@ -168,6 +178,13 @@ router.post('/', authenticateToken, (req, res) => {
 
   const claudeMd = `# Coder Agent — ${name}\n\nYou are implementing features for the ${name} project.\nThe project lives at \`${projectTarget}\`. All file operations target that directory.\n\n## Finishing checklist\n1. All tests pass\n2. Code runs without errors\n3. Changes committed\n`
   fs.writeFileSync(path.join(coderPath, 'CLAUDE.md'), claudeMd)
+
+  // Se project_id fornecido, criar vínculo
+  if (project_id) {
+    db.prepare(
+      'INSERT OR IGNORE INTO project_agents (project_id, workspace_path) VALUES (?, ?)'
+    ).run(project_id, coderPath)
+  }
 
   return res.status(201).json({ data: { id: name, path: coderPath }, error: null })
 })

@@ -17,6 +17,7 @@ function parsePlan(row: any) {
 interface CreatePlanBody {
   name: string
   tasks: string
+  project_id?: string
 }
 
 interface StartPlanBody {
@@ -37,8 +38,9 @@ interface LogEntry {
 // GET /api/plans - List all plans
 router.get('/', authenticateToken, (req: Request, res: Response) => {
   try {
-    const plans = db
-      .prepare(`
+    const { project_id } = req.query
+    const query = project_id
+      ? `
         SELECT
           id,
           name,
@@ -48,11 +50,30 @@ router.get('/', authenticateToken, (req: Request, res: Response) => {
           result,
           started_at,
           completed_at,
-          created_at
+          created_at,
+          project_id
+        FROM plans
+        WHERE project_id = ?
+        ORDER BY created_at DESC
+      `
+      : `
+        SELECT
+          id,
+          name,
+          tasks,
+          status,
+          client_id,
+          result,
+          started_at,
+          completed_at,
+          created_at,
+          project_id
         FROM plans
         ORDER BY created_at DESC
-      `)
-      .all()
+      `
+    const plans = project_id
+      ? db.prepare(query).all(project_id)
+      : db.prepare(query).all()
 
     res.json({ data: plans.map(parsePlan), error: null })
   } catch (error) {
@@ -64,7 +85,7 @@ router.get('/', authenticateToken, (req: Request, res: Response) => {
 // POST /api/plans - Create a new plan
 router.post('/', authenticateToken, (req: Request, res: Response) => {
   try {
-    const { name, tasks }: CreatePlanBody = req.body
+    const { name, tasks, project_id }: CreatePlanBody = req.body
 
     if (!name || !tasks) {
       return res.status(400).json({ data: null, error: 'name and tasks are required' })
@@ -74,9 +95,9 @@ router.post('/', authenticateToken, (req: Request, res: Response) => {
     const now = new Date().toISOString()
 
     db.prepare(`
-      INSERT INTO plans (id, name, tasks, status, created_at)
-      VALUES (?, ?, ?, 'pending', ?)
-    `).run(id, name, JSON.stringify(tasks), now)
+      INSERT INTO plans (id, name, tasks, status, project_id, created_at)
+      VALUES (?, ?, ?, 'pending', ?, ?)
+    `).run(id, name, JSON.stringify(tasks), project_id ?? null, now)
 
     const plan = db
       .prepare('SELECT * FROM plans WHERE id = ?')
