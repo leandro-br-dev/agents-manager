@@ -5,6 +5,10 @@ import { authenticateToken } from '../middleware/auth.js'
 import { db } from '../db/index.js'
 import { agentWorkspacePath, envAgentPath, slugify } from '../utils/paths.js'
 import { updateAgentSettings, rebuildAgentSettings } from '../utils/agentSettings.js'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const router = Router()
 
@@ -585,6 +589,40 @@ router.delete('/:id/environments', authenticateToken, (req, res) => {
   rebuildAgentSettings(ws.path, remaining.map(r => r.project_path))
 
   return res.json({ data: { unlinked: true }, error: null })
+})
+
+// POST /api/workspaces/:id/native-skills/:skillId — vincular skill nativa
+router.post('/:id/native-skills/:skillId', authenticateToken, (req, res) => {
+  const id = getIdParam(req.params)
+  const skillId = Array.isArray(req.params.skillId) ? req.params.skillId[0] : req.params.skillId
+  const ws = listAllWorkspaces().find(w => w.id === id)
+  if (!ws) return res.status(404).json({ data: null, error: 'Not found' })
+
+  const nativeSkillsPath = path.join(__dirname, '../../../native-skills')
+  const skillSrc = path.join(nativeSkillsPath, skillId, 'SKILL.md')
+  if (!fs.existsSync(skillSrc)) {
+    return res.status(404).json({ data: null, error: 'Native skill not found' })
+  }
+
+  const skillDest = path.join(ws.path, '.claude', 'skills', skillId)
+  fs.mkdirSync(skillDest, { recursive: true })
+  fs.copyFileSync(skillSrc, path.join(skillDest, 'SKILL.md'))
+
+  return res.status(201).json({ data: { installed: true, path: skillDest }, error: null })
+})
+
+// DELETE /api/workspaces/:id/native-skills/:skillId — remover skill nativa
+router.delete('/:id/native-skills/:skillId', authenticateToken, (req, res) => {
+  const id = getIdParam(req.params)
+  const skillId = Array.isArray(req.params.skillId) ? req.params.skillId[0] : req.params.skillId
+  const ws = listAllWorkspaces().find(w => w.id === id)
+  if (!ws) return res.status(404).json({ data: null, error: 'Not found' })
+
+  const skillPath = path.join(ws.path, '.claude', 'skills', skillId)
+  if (fs.existsSync(skillPath)) {
+    fs.rmSync(skillPath, { recursive: true })
+  }
+  return res.json({ data: { removed: true }, error: null })
 })
 
 export default router

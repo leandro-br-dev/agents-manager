@@ -6,6 +6,7 @@ import workspacesRouter from './routes/workspaces.js'
 import approvalsRouter from './routes/approvals.js'
 import daemonRouter from './routes/daemon.js'
 import projectsRouter from './routes/projects.js'
+import nativeSkillsRouter from './routes/nativeSkills.js'
 import { db } from './db/index.js'
 
 const app = express()
@@ -66,6 +67,9 @@ app.use('/api/daemon', daemonRouter)
 
 // Projects routes
 app.use('/api/projects', projectsRouter)
+
+// Native skills routes
+app.use('/api/native-skills', nativeSkillsRouter)
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
