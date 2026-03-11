@@ -127,6 +127,20 @@ export function initDatabase() {
     )
   `)
 
+  // Create agent_environments table (links workspaces to environments)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_environments (
+        workspace_path TEXT NOT NULL,
+        environment_id TEXT NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+        created_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (workspace_path, environment_id)
+      );
+    `)
+  } catch (e) {
+    // Table already exists - ignore error
+  }
+
   // Add project_id column to plans table if it doesn't exist
   try {
     db.exec('ALTER TABLE plans ADD COLUMN project_id TEXT')

@@ -4,6 +4,7 @@ import path from 'path'
 import { authenticateToken } from '../middleware/auth.js'
 import { db } from '../db/index.js'
 import { agentWorkspacePath, envAgentPath, slugify } from '../utils/paths.js'
+import { updateAgentSettings, rebuildAgentSettings } from '../utils/agentSettings.js'
 
 const router = Router()
 
@@ -189,6 +190,14 @@ router.get('/:id', authenticateToken, (req, res) => {
         .map(f => ({ name: f.replace('.md', ''), file: f }))
     : []
 
+  // Fetch linked environments
+  const linkedEnvs = db.prepare(`
+    SELECT e.id, e.name, e.type, e.project_path
+    FROM agent_environments ae
+    JOIN environments e ON e.id = ae.environment_id
+    WHERE ae.workspace_path = ?
+  `).all(coderPath) as any[]
+
   return res.json({
     data: {
       id: id,
@@ -198,6 +207,7 @@ router.get('/:id', authenticateToken, (req, res) => {
       settings: readJsonSafe(settingsPath),
       skills,
       agents,
+      environments: linkedEnvs,
     },
     error: null
   })
@@ -511,6 +521,70 @@ router.delete('/:id/agents/:agent', authenticateToken, (req, res) => {
   }
   fs.unlinkSync(agentPath)
   return res.json({ data: { deleted: true }, error: null })
+})
+
+// GET /api/workspaces/:id/environments — listar ambientes vinculados
+router.get('/:id/environments', authenticateToken, (req, res) => {
+  const id = getIdParam(req.params)
+  const ws = listAllWorkspaces().find(w => w.id === id)
+  if (!ws) return res.status(404).json({ data: null, error: 'Not found' })
+
+  const rows = db.prepare(`
+    SELECT e.*, p.name as project_name
+    FROM agent_environments ae
+    JOIN environments e ON e.id = ae.environment_id
+    JOIN projects p ON p.id = e.project_id
+    WHERE ae.workspace_path = ?
+  `).all(ws.path)
+
+  return res.json({ data: rows, error: null })
+})
+
+// POST /api/workspaces/:id/environments — vincular ambiente
+router.post('/:id/environments', authenticateToken, (req, res) => {
+  const id = getIdParam(req.params)
+  const ws = listAllWorkspaces().find(w => w.id === id)
+  if (!ws) return res.status(404).json({ data: null, error: 'Not found' })
+
+  const { environment_id } = req.body
+  if (!environment_id) return res.status(400).json({ data: null, error: 'environment_id required' })
+
+  const env = db.prepare('SELECT * FROM environments WHERE id = ?').get(environment_id) as any
+  if (!env) return res.status(404).json({ data: null, error: 'Environment not found' })
+
+  db.prepare(
+    'INSERT OR IGNORE INTO agent_environments (workspace_path, environment_id) VALUES (?, ?)'
+  ).run(ws.path, environment_id)
+
+  // Atualizar additionalDirectories no settings.local.json
+  if (env.project_path) {
+    updateAgentSettings(ws.path, [env.project_path])
+  }
+
+  return res.status(201).json({ data: { linked: true }, error: null })
+})
+
+// DELETE /api/workspaces/:id/environments — desvincular ambiente
+router.delete('/:id/environments', authenticateToken, (req, res) => {
+  const id = getIdParam(req.params)
+  const ws = listAllWorkspaces().find(w => w.id === id)
+  if (!ws) return res.status(404).json({ data: null, error: 'Not found' })
+
+  const { environment_id } = req.body
+  db.prepare(
+    'DELETE FROM agent_environments WHERE workspace_path = ? AND environment_id = ?'
+  ).run(ws.path, environment_id)
+
+  // Reconstruir additionalDirectories sem o ambiente removido
+  const remaining = db.prepare(`
+    SELECT e.project_path FROM agent_environments ae
+    JOIN environments e ON e.id = ae.environment_id
+    WHERE ae.workspace_path = ? AND e.project_path IS NOT NULL
+  `).all(ws.path) as any[]
+
+  rebuildAgentSettings(ws.path, remaining.map(r => r.project_path))
+
+  return res.json({ data: { unlinked: true }, error: null })
 })
 
 export default router
