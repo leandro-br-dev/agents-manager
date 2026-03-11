@@ -2,7 +2,8 @@ import { useSearchParams } from 'react-router-dom'
 import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, type Workspace } from '../api/workspaces'
 import { useGetProjects } from '../api/projects'
 import { useState } from 'react'
-import { Trash2, Plus, Check, X, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil } from 'lucide-react'
+import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil } from 'lucide-react'
+import { PageHeader, Button, Card, Input, Select, ConfirmDialog, EmptyState } from '@/components'
 
 export default function AgentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -50,92 +51,75 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
   if (error) return <div className="p-8 text-red-600">Error loading agents</div>
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Agents</h1>
-        <button
-          onClick={() => setShowNewForm(!showNewForm)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-        >
-          <Plus size={20} />
-          New Agent
-        </button>
-      </div>
+    <div className="max-w-6xl mx-auto py-8 px-6">
+      <PageHeader
+        title="Agents"
+        description="Manage your AI agent workspaces and configurations"
+        actions={
+          <Button variant="primary" onClick={() => setShowNewForm(!showNewForm)}>
+            <Plus size={18} /> New Agent
+          </Button>
+        }
+      />
 
       {showNewForm && (
-        <form onSubmit={handleCreate} className="mb-6 p-4 bg-white rounded-lg shadow border border-gray-200">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-              <input
-                type="text"
+        <Card className="mb-6">
+          <form onSubmit={handleCreate}>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <Input
+                label="Name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
+                placeholder="my-agent"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Project</label>
-              <select
+              <Select
+                label="Project"
                 value={newProjectId}
                 onChange={(e) => setNewProjectId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">No project (standalone agent)</option>
                 {projects?.map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Project Path</label>
-              <input
-                type="text"
+              </Select>
+              <Input
+                label="Project Path"
                 value={newPath}
                 onChange={(e) => setNewPath(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="/path/to/project"
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Anthropic Base URL</label>
-              <input
-                type="text"
+              <Input
+                label="Anthropic Base URL"
                 value={newBaseUrl}
                 onChange={(e) => setNewBaseUrl(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="http://localhost:8083"
               />
             </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Create
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowNewForm(false)}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+            <div className="flex gap-2">
+              <Button type="submit" variant="primary">Create</Button>
+              <Button type="button" variant="secondary" onClick={() => setShowNewForm(false)}>Cancel</Button>
+            </div>
+          </form>
+        </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {workspaces?.map((ws: Workspace) => (
-          <WorkspaceCard
-            key={ws.id}
-            workspace={ws}
-            onClick={() => onSelectWorkspace(ws.id)}
-          />
-        ))}
-      </div>
+      {workspaces && workspaces.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {workspaces.map((ws: Workspace) => (
+            <WorkspaceCard
+              key={ws.id}
+              workspace={ws}
+              onClick={() => onSelectWorkspace(ws.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No agents yet"
+          description="Create your first agent workspace to get started"
+        />
+      )}
     </div>
   )
 }
@@ -143,18 +127,22 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
 function WorkspaceCard({
   workspace,
   onClick,
-  onDelete,
 }: {
   workspace: any
   onClick: () => void
-  onDelete?: () => void
 }) {
   const deleteWorkspace = useDeleteWorkspace()
   const [showConfirm, setShowConfirm] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const handleDelete = () => {
+    setIsDeleting(true)
     deleteWorkspace.mutate(workspace.id, {
-      onSuccess: onDelete,
+      onSuccess: () => {
+        setShowConfirm(false)
+        setIsDeleting(false)
+      },
+      onError: () => setIsDeleting(false)
     })
   }
 
@@ -169,67 +157,57 @@ function WorkspaceCard({
   const badge = getBaseUrlBadge()
 
   return (
-    <div
-      onClick={onClick}
-      className="bg-white rounded-lg shadow border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer"
-    >
-      <div className="flex justify-between items-start mb-3">
-        <h3 className="text-lg font-semibold text-gray-900">{workspace.name}</h3>
-        {!showConfirm ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowConfirm(true)
-            }}
-            className="text-gray-400 hover:text-red-600 transition-colors"
-          >
-            <Trash2 size={18} />
-          </button>
-        ) : (
-          <div className="flex gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                handleDelete()
-              }}
-              className="text-red-600 hover:text-red-800"
-            >
-              <Check size={18} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowConfirm(false)
-              }}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X size={18} />
-            </button>
+    <>
+      <div onClick={onClick} className="hover:shadow-md transition-shadow cursor-pointer">
+        <Card>
+          <div className="flex justify-between items-start mb-3">
+            <h3 className="text-lg font-semibold text-gray-900">{workspace.name}</h3>
+            <div onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowConfirm(true)}
+                title="Delete agent"
+              >
+                <Trash2 size={16} />
+              </Button>
+            </div>
           </div>
-        )}
+
+          <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
+            <FolderOpen size={14} />
+            {workspace.path}
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}>
+              {badge.label}
+            </span>
+            {workspace.hasClaude && (
+              <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                ✓ CLAUDE.md
+              </span>
+            )}
+            {workspace.hasSettings && (
+              <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                ✓ Settings
+              </span>
+            )}
+          </div>
+        </Card>
       </div>
 
-      <p className="text-sm text-gray-500 mb-3 flex items-center gap-1">
-        <FolderOpen size={14} />
-        {workspace.path}
-      </p>
-
-      <div className="flex flex-wrap gap-2">
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}>
-          {badge.label}
-        </span>
-        {workspace.hasClaude && (
-          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-            ✓ CLAUDE.md
-          </span>
-        )}
-        {workspace.hasSettings && (
-          <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-            ✓ Settings
-          </span>
-        )}
-      </div>
-    </div>
+      <ConfirmDialog
+        open={showConfirm}
+        title="Delete Agent"
+        description={`Are you sure you want to delete "${workspace.name}"? This action cannot be undone.`}
+        variant="danger"
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+        onCancel={() => setShowConfirm(false)}
+        loading={isDeleting}
+      />
+    </>
   )
 }
 
@@ -262,52 +240,52 @@ function WorkspaceDetail({ workspaceId, onClose }: { workspaceId: string; onClos
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
+    <div className="max-w-4xl mx-auto py-8 px-6">
+      <button onClick={onClose} className="text-blue-600 hover:text-blue-800 text-sm mb-4">
+        ← Back to Agents
+      </button>
+      <div className="flex justify-between items-start mb-6">
         <div>
-          <button onClick={onClose} className="text-blue-600 hover:text-blue-800 mb-2">
-            ← Back to Agents
-          </button>
           {editingName ? (
-            <div className="flex items-center gap-2 mt-1">
-              <input
-                type="text"
+            <div className="flex items-center gap-2">
+              <Input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="border rounded px-2 py-1 text-sm font-mono"
                 pattern="[a-zA-Z0-9_-]+"
                 placeholder="agent-name"
+                className="w-64"
               />
-              <button
+              <Button
                 onClick={handleRename}
                 disabled={renameAgent.isPending || !newName || !/^[a-zA-Z0-9_-]+$/.test(newName)}
-                className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 disabled:bg-gray-300"
+                size="sm"
               >
                 Save
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 onClick={() => {
                   setEditingName(false)
                   setNewName(workspaceId)
                 }}
-                className="text-gray-400 text-xs hover:text-gray-600 px-2"
+                size="sm"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold text-gray-900">{workspaceId}</h1>
-              <button
+              <Button
+                variant="ghost"
                 onClick={() => setEditingName(true)}
-                className="text-gray-400 hover:text-gray-600"
                 title="Rename agent"
               >
                 <Pencil className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
           )}
-          <p className="text-sm text-gray-500">{workspace.path}</p>
+          <p className="text-sm text-gray-500 mt-1">{workspace.path}</p>
         </div>
       </div>
 
@@ -421,53 +399,48 @@ function SettingsTab({ workspaceId, settings }: { workspaceId: string; settings:
   return (
     <div className="space-y-6">
       {/* Env Vars */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
+      <Card>
         <h3 className="text-lg font-semibold text-gray-900 mb-3">Environment Variables</h3>
         <div className="space-y-2">
           {envVars.map((env, i) => (
             <div key={i} className="flex gap-2">
-              <input
-                type="text"
+              <Input
                 value={env.key}
                 onChange={(e) => {
                   const newVars = [...envVars]
                   newVars[i].key = e.target.value
                   setEnvVars(newVars)
                 }}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
                 placeholder="KEY"
+                className="flex-1"
               />
-              <input
-                type="text"
+              <Input
                 value={env.value}
                 onChange={(e) => {
                   const newVars = [...envVars]
                   newVars[i].value = e.target.value
                   setEnvVars(newVars)
                 }}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
                 placeholder="value"
+                className="flex-1"
               />
-              <button
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => setEnvVars(envVars.filter((_, j) => j !== i))}
-                className="px-3 py-2 text-red-600 hover:text-red-800"
               >
-                <Trash2 size={20} />
-              </button>
+                <Trash2 size={16} />
+              </Button>
             </div>
           ))}
-          <button
-            onClick={() => setEnvVars([...envVars, { key: '', value: '' }])}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2"
-          >
-            <Plus size={18} />
-            Add Env Var
-          </button>
+          <Button variant="secondary" onClick={() => setEnvVars([...envVars, { key: '', value: '' }])}>
+            <Plus size={16} /> Add Env Var
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Permissions */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
+      <Card>
         <h3 className="text-lg font-semibold text-gray-900 mb-3">Permissions</h3>
         <div className="mb-3">
           <label className="block text-sm font-medium text-gray-700 mb-2">Allow</label>
@@ -496,52 +469,43 @@ function SettingsTab({ workspaceId, settings }: { workspaceId: string; settings:
           <textarea
             value={permissions.deny}
             onChange={(e) => setPermissions({ ...permissions, deny: e.target.value })}
-            className="w-full h-24 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg"
+            className="w-full h-24 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             placeholder="Deny rules (one per line)"
           />
         </div>
-      </div>
+      </Card>
 
       {/* Additional Directories */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
+      <Card>
         <h3 className="text-lg font-semibold text-gray-900 mb-3">Additional Directories</h3>
         <div className="space-y-2">
           {additionalDirs.map((dir, i) => (
             <div key={i} className="flex gap-2 items-center">
-              <input
-                type="text"
+              <Input
                 value={dir}
                 onChange={(e) => {
                   const newDirs = [...additionalDirs]
                   newDirs[i] = e.target.value
                   setAdditionalDirs(newDirs)
                 }}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                className="flex-1"
               />
-              <button
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => setAdditionalDirs(additionalDirs.filter((_, j) => j !== i))}
-                className="px-3 py-2 text-red-600 hover:text-red-800"
               >
-                <Trash2 size={20} />
-              </button>
+                <Trash2 size={16} />
+              </Button>
             </div>
           ))}
-          <button
-            onClick={() => setAdditionalDirs([...additionalDirs, ''])}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2"
-          >
-            <Plus size={18} />
-            Add Directory
-          </button>
+          <Button variant="secondary" onClick={() => setAdditionalDirs([...additionalDirs, ''])}>
+            <Plus size={16} /> Add Directory
+          </Button>
         </div>
-      </div>
+      </Card>
 
-      <button
-        onClick={handleSave}
-        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-      >
-        Save Settings
-      </button>
+      <Button variant="primary" onClick={handleSave}>Save Settings</Button>
     </div>
   )
 }
@@ -551,6 +515,7 @@ function SkillsTab({ workspaceId, skills }: { workspaceId: string; skills: Array
   const [editingSkill, setEditingSkill] = useState<string | null>(null)
   const [skillName, setSkillName] = useState('')
   const [skillContent, setSkillContent] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   const installSkill = useInstallSkill(workspaceId)
   const deleteSkill = useDeleteSkill(workspaceId)
@@ -599,8 +564,14 @@ description: "Descreva quando usar esta skill"
   }
 
   const handleDelete = (skillName: string) => {
-    if (confirm(`Delete skill ${skillName}?`)) {
-      deleteSkill.mutate(skillName)
+    setDeleteConfirm(skillName)
+  }
+
+  const confirmDelete = () => {
+    if (deleteConfirm) {
+      deleteSkill.mutate(deleteConfirm, {
+        onSuccess: () => setDeleteConfirm(null)
+      })
     }
   }
 
@@ -625,25 +596,20 @@ description: "Descreva quando usar esta skill"
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-900">Skills ({skills.length})</h3>
-        <button
-          onClick={handleNewSkill}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-        >
-          <Plus size={18} />
-          New Skill
-        </button>
+        <Button variant="primary" onClick={handleNewSkill}>
+          <Plus size={16} /> New Skill
+        </Button>
       </div>
 
       {(showNewForm || editingSkill) && (
-        <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
+        <Card>
           <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
+            <Input
+              label="Name"
               value={skillName}
               onChange={(e) => setSkillName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono"
               placeholder="my-skill"
+              className="font-mono"
             />
           </div>
           <div className="mb-3">
@@ -651,29 +617,24 @@ description: "Descreva quando usar esta skill"
             <textarea
               value={skillContent}
               onChange={(e) => setSkillContent(e.target.value)}
-              className="w-full h-64 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg"
+              className="w-full h-64 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder={SKILL_TEMPLATE}
             />
           </div>
           <div className="flex gap-2">
-            <button
+            <Button
               onClick={handleSave}
               disabled={installSkill.isPending || !skillName || !skillContent}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+              variant="primary"
             >
               {installSkill.isPending ? 'Saving...' : 'Save'}
-            </button>
-            <button
-              onClick={handleCancel}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-            >
-              Cancel
-            </button>
+            </Button>
+            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="bg-white rounded-lg shadow border border-gray-200">
+      <Card padding="none">
         <div className="divide-y divide-gray-200">
           {skills.map((skill) => (
             <div key={skill.name} className="p-4 flex justify-between items-center">
@@ -687,28 +648,30 @@ description: "Descreva quando usar esta skill"
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(skill.name)}
-                  className="text-blue-600 hover:text-blue-800"
-                  title="Edit skill"
-                >
-                  <Edit3 size={18} />
-                </button>
-                <button
-                  onClick={() => handleDelete(skill.name)}
-                  className="text-red-600 hover:text-red-800"
-                  title="Delete skill"
-                >
-                  <Trash2 size={18} />
-                </button>
+                <Button variant="ghost" size="sm" onClick={() => handleEdit(skill.name)} title="Edit skill">
+                  <Edit3 size={16} />
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => handleDelete(skill.name)} title="Delete skill">
+                  <Trash2 size={16} />
+                </Button>
               </div>
             </div>
           ))}
           {skills.length === 0 && (
-            <div className="p-8 text-center text-gray-500">No skills installed</div>
+            <EmptyState title="No skills installed" />
           )}
         </div>
-      </div>
+      </Card>
+
+      <ConfirmDialog
+        open={deleteConfirm !== null}
+        title="Delete Skill"
+        description={`Are you sure you want to delete "${deleteConfirm}"? This action cannot be undone.`}
+        variant="danger"
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   )
 }
@@ -718,6 +681,7 @@ function AgentsTab({ workspaceId, agents }: { workspaceId: string; agents: Array
   const [editingAgent, setEditingAgent] = useState<string | null>(null)
   const [agentName, setAgentName] = useState('')
   const [agentContent, setAgentContent] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   const saveAgent = useSaveAgent(workspaceId)
   const deleteAgent = useDeleteAgent(workspaceId)
@@ -767,8 +731,14 @@ Descreva a especialidade e comportamento deste agente.
   }
 
   const handleDelete = (agentName: string) => {
-    if (confirm(`Delete agent ${agentName}?`)) {
-      deleteAgent.mutate(agentName)
+    setDeleteConfirm(agentName)
+  }
+
+  const confirmDelete = () => {
+    if (deleteConfirm) {
+      deleteAgent.mutate(deleteConfirm, {
+        onSuccess: () => setDeleteConfirm(null)
+      })
     }
   }
 
@@ -794,25 +764,20 @@ Descreva a especialidade e comportamento deste agente.
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-900">Sub-Agents ({agents.length})</h3>
-        <button
-          onClick={handleNewAgent}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-        >
-          <Plus size={18} />
-          New Agent
-        </button>
+        <Button variant="primary" onClick={handleNewAgent}>
+          <Plus size={16} /> New Agent
+        </Button>
       </div>
 
       {(showNewForm || editingAgent) && (
-        <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
+        <Card>
           <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-            <input
-              type="text"
+            <Input
+              label="Name"
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono"
               placeholder="my-agent"
+              className="font-mono"
             />
           </div>
           <div className="mb-3">
@@ -820,29 +785,24 @@ Descreva a especialidade e comportamento deste agente.
             <textarea
               value={agentContent}
               onChange={(e) => setAgentContent(e.target.value)}
-              className="w-full h-64 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg"
+              className="w-full h-64 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder={AGENT_TEMPLATE}
             />
           </div>
           <div className="flex gap-2">
-            <button
+            <Button
               onClick={handleSave}
               disabled={saveAgent.isPending || !agentName || !agentContent}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+              variant="primary"
             >
               {saveAgent.isPending ? 'Saving...' : 'Save'}
-            </button>
-            <button
-              onClick={handleCancel}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
-            >
-              Cancel
-            </button>
+            </Button>
+            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
           </div>
-        </div>
+        </Card>
       )}
 
-      <div className="bg-white rounded-lg shadow border border-gray-200">
+      <Card padding="none">
         <div className="divide-y divide-gray-200">
           {agents.map((agent) => (
             <div key={agent.name} className="p-4 flex justify-between items-center">
@@ -854,28 +814,30 @@ Descreva a especialidade e comportamento deste agente.
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(agent.name)}
-                  className="text-blue-600 hover:text-blue-800"
-                  title="Edit agent"
-                >
-                  <Edit3 size={18} />
-                </button>
-                <button
-                  onClick={() => handleDelete(agent.name)}
-                  className="text-red-600 hover:text-red-800"
-                  title="Delete agent"
-                >
-                  <Trash2 size={18} />
-                </button>
+                <Button variant="ghost" size="sm" onClick={() => handleEdit(agent.name)} title="Edit agent">
+                  <Edit3 size={16} />
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => handleDelete(agent.name)} title="Delete agent">
+                  <Trash2 size={16} />
+                </Button>
               </div>
             </div>
           ))}
           {agents.length === 0 && (
-            <div className="p-8 text-center text-gray-500">No sub-agents configured</div>
+            <EmptyState title="No sub-agents configured" />
           )}
         </div>
-      </div>
+      </Card>
+
+      <ConfirmDialog
+        open={deleteConfirm !== null}
+        title="Delete Agent"
+        description={`Are you sure you want to delete "${deleteConfirm}"? This action cannot be undone.`}
+        variant="danger"
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   )
 }

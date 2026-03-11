@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
+import { PageHeader, Button, Card } from '@/components';
 
 function ApiStatusBadge() {
   const { isError, isLoading } = useQuery({
@@ -55,30 +56,33 @@ export default function SettingsPage() {
   const stopDaemon = useStopDaemon()
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-8">Settings</h1>
+    <div className="max-w-2xl mx-auto py-8 px-6">
+      <PageHeader
+        title="Settings"
+        description="Configure your API connection and agent daemon"
+      />
 
       {/* Seção: Conexão com a API */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">API Connection</h2>
-        <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">API Connection</h2>
+        <Card className="bg-gray-50">
           <div className="flex justify-between">
             <span className="text-sm text-gray-600">API URL</span>
             <code className="text-sm font-mono text-gray-900">
               {import.meta.env.VITE_API_URL || 'http://localhost:3000'}
             </code>
           </div>
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center mt-3">
             <span className="text-sm text-gray-600">Status</span>
             <ApiStatusBadge />
           </div>
-        </div>
+        </Card>
       </section>
 
       {/* Seção: Agent Daemon */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Agent Daemon</h2>
-        <div className="bg-white border rounded-lg p-4">
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">Agent Daemon</h2>
+        <Card>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className={`h-2.5 w-2.5 rounded-full ${
@@ -90,21 +94,23 @@ export default function SettingsPage() {
             </div>
             <div className="flex gap-2">
               {daemon?.status !== 'running' ? (
-                <button
+                <Button
                   onClick={() => startDaemon.mutate()}
                   disabled={startDaemon.isPending}
-                  className="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
+                  loading={startDaemon.isPending}
+                  className="bg-green-600 hover:bg-green-700 border-green-600"
                 >
-                  {startDaemon.isPending ? 'Starting...' : 'Start'}
-                </button>
+                  Start
+                </Button>
               ) : (
-                <button
+                <Button
                   onClick={() => stopDaemon.mutate()}
                   disabled={stopDaemon.isPending}
-                  className="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+                  loading={stopDaemon.isPending}
+                  variant="danger"
                 >
-                  {stopDaemon.isPending ? 'Stopping...' : 'Stop'}
-                </button>
+                  Stop
+                </Button>
               )}
             </div>
           </div>
@@ -113,37 +119,37 @@ export default function SettingsPage() {
               {daemon.logs.slice(-20).join('\n')}
             </pre>
           )}
-        </div>
+        </Card>
       </section>
 
       {/* Seção: Agent Client */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Agent Client</h2>
-        <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm text-gray-700">
-          <p className="text-green-600">
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">Agent Client</h2>
+        <Card className="bg-gray-50">
+          <p className="text-sm text-green-600">
             <strong>✓ Managed via API</strong> — O daemon agora é controlado pela interface acima.
           </p>
           <p className="text-xs text-gray-500 mt-2">
             Se precisar iniciar manualmente para debug, o script está em: <code>client/main.py</code>
           </p>
-        </div>
+        </Card>
       </section>
 
       {/* Seção: Workspaces path */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Workspaces</h2>
-        <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">Workspaces</h2>
+        <Card className="bg-gray-50">
           <div className="flex justify-between">
             <span className="text-sm text-gray-600">Base path</span>
             <code className="text-sm font-mono text-gray-900">
               AGENT_CLIENT_PATH env var
             </code>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 mt-3">
             Defina AGENT_CLIENT_PATH no .env da API para apontar para o diretório de projetos.
             Padrão: /root/projects/agent-client/projects
           </p>
-        </div>
+        </Card>
       </section>
     </div>
   );

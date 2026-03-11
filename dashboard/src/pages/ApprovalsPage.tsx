@@ -1,29 +1,26 @@
 import { AlertTriangle, Check, CheckCircle, X } from 'lucide-react'
 import { useGetPendingApprovals, useRespondApproval, type Approval } from '@/api/approvals'
+import { PageHeader, Button, EmptyState } from '@/components'
 
 export default function ApprovalsPage() {
   const { data: approvals = [], isLoading } = useGetPendingApprovals()
   const respond = useRespondApproval()
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Approval Queue</h1>
-        {approvals.length > 0 && (
-          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-sm font-medium">
-            {approvals.length} pending
-          </span>
-        )}
-      </div>
+    <div className="max-w-3xl mx-auto py-8 px-6">
+      <PageHeader
+        title="Approval Queue"
+        description={approvals.length > 0 ? `${approvals.length} pending approval${approvals.length > 1 ? 's' : ''}` : undefined}
+      />
 
       {isLoading ? (
-        <div className="text-center py-12 text-gray-400">Loading...</div>
+        <EmptyState title="Loading..." />
       ) : approvals.length === 0 ? (
-        <div className="text-center py-12">
-          <CheckCircle className="h-12 w-12 text-green-400 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No pending approvals</p>
-          <p className="text-gray-400 text-sm mt-1">The agent will pause here when it needs permission</p>
-        </div>
+        <EmptyState
+          icon={<CheckCircle className="h-12 w-12 text-green-400" />}
+          title="No pending approvals"
+          description="The agent will pause here when it needs permission"
+        />
       ) : (
         <div className="space-y-4">
           {approvals.map(approval => (
@@ -84,20 +81,20 @@ function ApprovalCard({ approval, onDecision, isLoading }: {
       </pre>
 
       <div className="flex gap-3">
-        <button
+        <Button
           onClick={() => onDecision('approved')}
           disabled={isLoading}
-          className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50"
+          className="bg-green-600 hover:bg-green-700 border-green-600"
         >
           <Check className="h-4 w-4" /> Approve
-        </button>
-        <button
+        </Button>
+        <Button
           onClick={() => onDecision('denied')}
           disabled={isLoading}
-          className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 disabled:opacity-50"
+          variant="danger"
         >
           <X className="h-4 w-4" /> Deny
-        </button>
+        </Button>
       </div>
     </div>
   )

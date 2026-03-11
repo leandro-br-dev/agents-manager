@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGetProjects, useCreateProject, useDeleteProject, useCreateEnvironment, useUpdateEnvironment, useDeleteEnvironment, useLinkAgent, useUnlinkAgent, type Environment } from '@/api/projects'
 import { useGetWorkspaces } from '@/api/workspaces'
 import { FolderOpen, Plus, Trash2, Edit2, ChevronDown, ChevronUp, Link2, X } from 'lucide-react'
+import { PageHeader, Button, Card, Input, Select, ConfirmDialog, EmptyState } from '@/components'
 
 export default function ProjectsPage() {
   const { data: projects, isLoading, error } = useGetProjects()
@@ -22,6 +23,8 @@ export default function ProjectsPage() {
   const [editingEnv, setEditingEnv] = useState<{ projectId: string; envId: string } | null>(null)
   const [linkingAgent, setLinkingAgent] = useState<string | null>(null)
   const [selectedLinkPath, setSelectedLinkPath] = useState('')
+  const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<{ id: string; name: string } | null>(null)
+  const [deleteEnvConfirm, setDeleteEnvConfirm] = useState<{ projectId: string; envId: string; envName: string } | null>(null)
 
   // New environment form state
   const [newEnvData, setNewEnvData] = useState<Partial<Environment>>({
@@ -35,7 +38,7 @@ export default function ProjectsPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8">
+      <div className="max-w-6xl mx-auto py-8 px-6">
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-1/4 mb-4"></div>
           <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
@@ -47,10 +50,10 @@ export default function ProjectsPage() {
 
   if (error) {
     return (
-      <div className="p-8">
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          Error loading projects: {(error as Error).message}
-        </div>
+      <div className="max-w-6xl mx-auto py-8 px-6">
+        <Card className="bg-red-50 border-red-200">
+          <p className="text-red-700">Error loading projects: {(error as Error).message}</p>
+        </Card>
       </div>
     )
   }
@@ -73,12 +76,15 @@ export default function ProjectsPage() {
   }
 
   const handleDeleteProject = async (projectId: string, projectName: string) => {
-    if (!confirm(`Are you sure you want to delete "${projectName}"? This will also delete all its environments.`)) {
-      return
-    }
+    setDeleteProjectConfirm({ id: projectId, name: projectName })
+  }
+
+  const confirmDeleteProject = async () => {
+    if (!deleteProjectConfirm) return
 
     try {
-      await deleteProjectMutation.mutateAsync(projectId)
+      await deleteProjectMutation.mutateAsync(deleteProjectConfirm.id)
+      setDeleteProjectConfirm(null)
     } catch (error) {
       alert(`Failed to delete project: ${(error as Error).message}`)
     }
@@ -130,12 +136,15 @@ export default function ProjectsPage() {
   }
 
   const handleDeleteEnvironment = async (projectId: string, envId: string, envName: string) => {
-    if (!confirm(`Are you sure you want to delete environment "${envName}"?`)) {
-      return
-    }
+    setDeleteEnvConfirm({ projectId, envId, envName })
+  }
+
+  const confirmDeleteEnvironment = async () => {
+    if (!deleteEnvConfirm) return
 
     try {
-      await deleteEnvironmentMutation.mutateAsync({ projectId, envId })
+      await deleteEnvironmentMutation.mutateAsync({ projectId: deleteEnvConfirm.projectId, envId: deleteEnvConfirm.envId })
+      setDeleteEnvConfirm(null)
     } catch (error) {
       alert(`Failed to delete environment: ${(error as Error).message}`)
     }
@@ -198,75 +207,59 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
-          <p className="text-gray-600 mt-1">Manage your projects and their execution environments</p>
-        </div>
-        <button
-          onClick={() => setShowNewProjectForm(!showNewProjectForm)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={20} />
-          New Project
-        </button>
-      </div>
+    <div className="max-w-6xl mx-auto py-8 px-6">
+      <PageHeader
+        title="Projects"
+        description="Manage your projects and their execution environments"
+        actions={
+          <Button variant="primary" onClick={() => setShowNewProjectForm(!showNewProjectForm)}>
+            <Plus size={18} /> New Project
+          </Button>
+        }
+      />
 
       {/* New Project Form */}
       {showNewProjectForm && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
+        <Card className="mb-6">
           <h2 className="text-lg font-semibold mb-4">Create New Project</h2>
           <form onSubmit={handleCreateProject}>
             <div className="space-y-4">
+              <Input
+                label="Project Name"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="e.g., CharHub"
+                required
+              />
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Project Name *
-                </label>
-                <input
-                  type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="e.g., CharHub"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={newProjectDescription}
                   onChange={(e) => setNewProjectDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                   rows={3}
                   placeholder="Brief description of the project..."
                 />
               </div>
               <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={createProjectMutation.isPending}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors"
-                >
+                <Button type="submit" variant="primary" disabled={createProjectMutation.isPending} loading={createProjectMutation.isPending}>
                   {createProjectMutation.isPending ? 'Creating...' : 'Create Project'}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => {
                     setShowNewProjectForm(false)
                     setNewProjectName('')
                     setNewProjectDescription('')
                   }}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           </form>
-        </div>
+        </Card>
       )}
 
       {/* Projects List */}
@@ -337,94 +330,74 @@ export default function ProjectsPage() {
 
                   {/* New Environment Form */}
                   {showEnvForm.has(project.id) && (
-                    <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+                    <Card className="mb-4">
                       <h5 className="text-sm font-semibold mb-3">Create New Environment</h5>
                       <form onSubmit={(e) => handleCreateEnvironment(project.id, e)}>
                         <div className="grid grid-cols-2 gap-4 mb-4">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
-                            <input
-                              type="text"
-                              value={newEnvData.name || ''}
-                              onChange={(e) => setNewEnvData({ ...newEnvData, name: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                              placeholder="e.g., Development"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Type *</label>
-                            <select
-                              value={newEnvData.type || 'local-wsl'}
-                              onChange={(e) => setNewEnvData({ ...newEnvData, type: e.target.value as Environment['type'] })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                            >
-                              <option value="local-wsl">Local WSL</option>
-                              <option value="local-windows">Local Windows</option>
-                              <option value="ssh">SSH</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Project Path *</label>
-                            <input
-                              type="text"
-                              value={newEnvData.project_path || ''}
-                              onChange={(e) => setNewEnvData({ ...newEnvData, project_path: e.target.value })}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                              placeholder="/root/projects/my-project  (where your project files are)"
-                              required
-                            />
-                          </div>
+                          <Input
+                            label="Name"
+                            value={newEnvData.name || ''}
+                            onChange={(e) => setNewEnvData({ ...newEnvData, name: e.target.value })}
+                            placeholder="e.g., Development"
+                            required
+                          />
+                          <Select
+                            label="Type"
+                            value={newEnvData.type || 'local-wsl'}
+                            onChange={(e) => setNewEnvData({ ...newEnvData, type: e.target.value as Environment['type'] })}
+                          >
+                            <option value="local-wsl">Local WSL</option>
+                            <option value="local-windows">Local Windows</option>
+                            <option value="ssh">SSH</option>
+                          </Select>
+                          <Input
+                            label="Project Path"
+                            value={newEnvData.project_path || ''}
+                            onChange={(e) => setNewEnvData({ ...newEnvData, project_path: e.target.value })}
+                            placeholder="/root/projects/my-project"
+                            hint="Where your project files are located"
+                            required
+                          />
                           {newEnvData.type === 'ssh' && (
                             <>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">SSH Host</label>
-                                <input
-                                  type="text"
-                                  value={newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config).host || '' : ''}
-                                  onChange={(e) => {
-                                    const current = newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config) : {}
-                                    setNewEnvData({
-                                      ...newEnvData,
-                                      ssh_config: JSON.stringify({ ...current, host: e.target.value })
-                                    })
-                                  }}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                  placeholder="server.example.com"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">SSH User</label>
-                                <input
-                                  type="text"
-                                  value={newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config).user || '' : ''}
-                                  onChange={(e) => {
-                                    const current = newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config) : {}
-                                    setNewEnvData({
-                                      ...newEnvData,
-                                      ssh_config: JSON.stringify({ ...current, user: e.target.value })
-                                    })
-                                  }}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                  placeholder="ubuntu"
-                                />
-                              </div>
+                              <Input
+                                label="SSH Host"
+                                value={newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config).host || '' : ''}
+                                onChange={(e) => {
+                                  const current = newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config) : {}
+                                  setNewEnvData({
+                                    ...newEnvData,
+                                    ssh_config: JSON.stringify({ ...current, host: e.target.value })
+                                  })
+                                }}
+                                placeholder="server.example.com"
+                              />
+                              <Input
+                                label="SSH User"
+                                value={newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config).user || '' : ''}
+                                onChange={(e) => {
+                                  const current = newEnvData.ssh_config ? JSON.parse(newEnvData.ssh_config) : {}
+                                  setNewEnvData({
+                                    ...newEnvData,
+                                    ssh_config: JSON.stringify({ ...current, user: e.target.value })
+                                  })
+                                }}
+                                placeholder="ubuntu"
+                              />
                             </>
                           )}
                         </div>
                         <p className="text-xs text-gray-400 mt-2">
                           Agent workspace will be created automatically at <code className="bg-gray-100 px-1.5 py-0.5 rounded">projects/{project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/{newEnvData.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'env-name'}/agent-coder/</code>
                         </p>
-                        <div className="flex gap-2">
-                          <button
-                            type="submit"
-                            disabled={createEnvironmentMutation.isPending}
-                            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors"
-                          >
+                        <div className="flex gap-2 mt-3">
+                          <Button type="submit" variant="primary" size="sm" disabled={createEnvironmentMutation.isPending} loading={createEnvironmentMutation.isPending}>
                             {createEnvironmentMutation.isPending ? 'Creating...' : 'Create'}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="secondary"
+                            size="sm"
                             onClick={() => {
                               setShowEnvForm(prev => {
                                 const next = new Set(prev)
@@ -437,13 +410,12 @@ export default function ProjectsPage() {
                                 project_path: '',
                               })
                             }}
-                            className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                           >
                             Cancel
-                          </button>
+                          </Button>
                         </div>
                       </form>
-                    </div>
+                    </Card>
                   )}
 
                   {/* Environments List */}
@@ -457,61 +429,48 @@ export default function ProjectsPage() {
                             // Edit Form
                             <form onSubmit={(e) => handleUpdateEnvironment(project.id, env.id, e)}>
                               <div className="grid grid-cols-2 gap-3 mb-3">
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
-                                  <input
-                                    type="text"
-                                    value={editEnvData.name || ''}
-                                    onChange={(e) => setEditEnvData({ ...editEnvData, name: e.target.value })}
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                    required
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-                                  <select
-                                    value={editEnvData.type || 'local-wsl'}
-                                    onChange={(e) => setEditEnvData({ ...editEnvData, type: e.target.value as Environment['type'] })}
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                  >
-                                    <option value="local-wsl">Local WSL</option>
-                                    <option value="local-windows">Local Windows</option>
-                                    <option value="ssh">SSH</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Project Path</label>
-                                  <input
-                                    type="text"
-                                    value={editEnvData.project_path || ''}
-                                    onChange={(e) => setEditEnvData({ ...editEnvData, project_path: e.target.value })}
-                                    className="w-full px-2 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                    placeholder="/root/projects/my-project  (where your project files are)"
-                                    required
-                                  />
-                                </div>
+                                <Input
+                                  label="Name"
+                                  value={editEnvData.name || ''}
+                                  onChange={(e) => setEditEnvData({ ...editEnvData, name: e.target.value })}
+                                  required
+                                />
+                                <Select
+                                  label="Type"
+                                  value={editEnvData.type || 'local-wsl'}
+                                  onChange={(e) => setEditEnvData({ ...editEnvData, type: e.target.value as Environment['type'] })}
+                                >
+                                  <option value="local-wsl">Local WSL</option>
+                                  <option value="local-windows">Local Windows</option>
+                                  <option value="ssh">SSH</option>
+                                </Select>
+                                <Input
+                                  label="Project Path"
+                                  value={editEnvData.project_path || ''}
+                                  onChange={(e) => setEditEnvData({ ...editEnvData, project_path: e.target.value })}
+                                  placeholder="/root/projects/my-project"
+                                  hint="Where your project files are located"
+                                  required
+                                />
                               </div>
                               <p className="text-xs text-gray-400 mt-2">
                                 Agent workspace is auto-generated and cannot be edited
                               </p>
                               <div className="flex gap-2">
-                                <button
-                                  type="submit"
-                                  disabled={updateEnvironmentMutation.isPending}
-                                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors"
-                                >
+                                <Button type="submit" variant="primary" size="sm" disabled={updateEnvironmentMutation.isPending} loading={updateEnvironmentMutation.isPending}>
                                   {updateEnvironmentMutation.isPending ? 'Saving...' : 'Save'}
-                                </button>
-                                <button
+                                </Button>
+                                <Button
                                   type="button"
+                                  variant="secondary"
+                                  size="sm"
                                   onClick={() => {
                                     setEditingEnv(null)
                                     setEditEnvData({})
                                   }}
-                                  className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
                                 >
                                   Cancel
-                                </button>
+                                </Button>
                               </div>
                             </form>
                           ) : (
@@ -546,20 +505,12 @@ export default function ProjectsPage() {
                                   </div>
                                 </div>
                                 <div className="flex gap-1">
-                                  <button
-                                    onClick={() => startEditingEnv(project.id, env)}
-                                    className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                                    title="Edit environment"
-                                  >
-                                    <Edit2 size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteEnvironment(project.id, env.id, env.name)}
-                                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Delete environment"
-                                  >
-                                    <Trash2 size={16} />
-                                  </button>
+                                  <Button variant="ghost" size="sm" onClick={() => startEditingEnv(project.id, env)} title="Edit environment">
+                                    <Edit2 size={14} />
+                                  </Button>
+                                  <Button variant="danger" size="sm" onClick={() => handleDeleteEnvironment(project.id, env.id, env.name)} title="Delete environment">
+                                    <Trash2 size={14} />
+                                  </Button>
                                 </div>
                               </div>
                             </>
@@ -574,13 +525,9 @@ export default function ProjectsPage() {
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Agents</h4>
-                      <button
-                        onClick={() => setLinkingAgent(project.id)}
-                        className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-                      >
-                        <Link2 className="h-3.5 w-3.5" />
-                        Link Agent
-                      </button>
+                      <Button variant="secondary" size="sm" onClick={() => setLinkingAgent(project.id)}>
+                        <Link2 className="h-3.5 w-3.5" /> Link Agent
+                      </Button>
                     </div>
                     {!project.agent_paths || project.agent_paths.length === 0 ? (
                       <p className="text-xs text-gray-400 italic">No agents linked yet. Agents are created automatically when you add an environment.</p>
@@ -609,18 +556,16 @@ export default function ProjectsPage() {
             </div>
           ))
         ) : (
-          <div className="bg-white border border-gray-200 rounded-lg p-12 text-center shadow-sm">
-            <FolderOpen size={48} className="mx-auto text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-            <p className="text-gray-600 mb-4">Create your first project to start managing your workspaces</p>
-            <button
-              onClick={() => setShowNewProjectForm(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus size={20} />
-              Create Project
-            </button>
-          </div>
+          <EmptyState
+            icon={<FolderOpen size={48} className="text-gray-300" />}
+            title="No projects yet"
+            description="Create your first project to start managing your workspaces"
+            action={
+              <Button variant="primary" onClick={() => setShowNewProjectForm(true)}>
+                <Plus size={18} /> Create Project
+              </Button>
+            }
+          />
         )}
       </div>
 
@@ -632,10 +577,9 @@ export default function ProjectsPage() {
             <h3 className="text-sm font-semibold mb-4">Link Agent to Project</h3>
             <div className="mb-4">
               <label className="block text-xs font-medium text-gray-700 mb-1">Select agent workspace</label>
-              <select
+              <Select
                 value={selectedLinkPath}
                 onChange={e => setSelectedLinkPath(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
               >
                 <option value="">Choose agent...</option>
                 {allWorkspaces
@@ -643,26 +587,46 @@ export default function ProjectsPage() {
                   .map(ws => (
                     <option key={ws.id} value={ws.path}>{ws.name}</option>
                   ))}
-              </select>
+              </Select>
             </div>
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setLinkingAgent(null)}
-                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
+              <Button variant="secondary" size="sm" onClick={() => setLinkingAgent(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={handleLinkAgent}
                 disabled={!selectedLinkPath || linkAgentMutation.isPending}
-                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+                loading={linkAgentMutation.isPending}
               >
                 {linkAgentMutation.isPending ? 'Linking...' : 'Link'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Confirm Dialogs */}
+      <ConfirmDialog
+        open={deleteProjectConfirm !== null}
+        title="Delete Project"
+        description={`Are you sure you want to delete "${deleteProjectConfirm?.name}"? This will also delete all its environments.`}
+        variant="danger"
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteProject}
+        onCancel={() => setDeleteProjectConfirm(null)}
+        loading={deleteProjectMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={deleteEnvConfirm !== null}
+        title="Delete Environment"
+        description={`Are you sure you want to delete environment "${deleteEnvConfirm?.envName}"?`}
+        variant="danger"
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteEnvironment}
+        onCancel={() => setDeleteEnvConfirm(null)}
+        loading={deleteEnvironmentMutation.isPending}
+      />
     </div>
   )
 }
