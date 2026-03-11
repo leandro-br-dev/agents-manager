@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -35,6 +36,40 @@ from claude_agent_sdk import (
 
 from orchestrator import logger
 from orchestrator.plan import Plan, Task
+
+
+# Structured output patterns for quick actions
+STRUCTURED_PATTERNS = [
+    ('plan', r'<plan>\s*({.*?})\s*</plan>'),
+    ('review', r'<review>\s*({.*?})\s*</review>'),
+    ('diagnosis', r'<diagnosis>\s*({.*?})\s*</diagnosis>'),
+]
+
+
+def extract_structured_output(full_text: str) -> dict | None:
+    """
+    Extract the first structured output block found in the agent output.
+
+    Searches for JSON blocks wrapped in <plan>, <review>, or <diagnosis> tags.
+    These are used by quick actions to produce structured results for frontend approval.
+
+    Args:
+        full_text: Complete output text from the agent execution
+
+    Returns:
+        dict with 'type' (plan|review|diagnosis) and 'content' (parsed JSON),
+        or None if no structured output found
+    """
+    for output_type, pattern in STRUCTURED_PATTERNS:
+        match = re.search(pattern, full_text, re.DOTALL)
+        if match:
+            try:
+                content = json.loads(match.group(1))
+                return {'type': output_type, 'content': content}
+            except json.JSONDecodeError:
+                # Pattern matched but JSON is invalid - continue to next pattern
+                continue
+    return None
 
 
 def _check_deny_rules(tool_name: str, tool_input: dict, deny_rules: list[str]) -> tuple[bool, str]:
@@ -360,6 +395,7 @@ async def run_task(
 
     final_result: ResultMessage | None = None
     logs_buffer: list[dict] = []
+    captured_texts: list[str] = []  # Capture all output text for structured output detection
 
     def send_logs_if_needed() -> None:
         """Send buffered logs if callback is available and buffer has content."""
@@ -397,6 +433,7 @@ async def run_task(
                     if isinstance(block, TextBlock) and block.text.strip():
                         logger.task_output(task.id, block.text)
                         add_log("info", block.text)
+                        captured_texts.append(block.text)  # Capture for structured output
                     elif isinstance(block, ToolUseBlock):
                         logger.task_tool(task.id, block.name)
                         add_log("debug", f"⚙ {block.name}")
@@ -544,6 +581,17 @@ async def run_task(
         if success and ctx_dir:
             _save_task_note(ctx_dir, task, output)
 
+        # Detect and save structured output for quick actions
+        if success and client and plan_id:
+            full_output = '\n'.join(captured_texts)
+            structured = extract_structured_output(full_output)
+            if structured:
+                logger.info(f"[{task.id}] Found structured output: {structured['type']}")
+                try:
+                    await client.save_structured_output(plan_id, structured)
+                except Exception as e:
+                    logger.warning(f"[{task.id}] Failed to save structured output: {e}")
+
         return TaskResult(task_id=task.id, success=success, output=output)
 
     logger.task_done(task.id, "success")
@@ -552,6 +600,17 @@ async def run_task(
     # Save context note for dependent tasks if this task succeeded
     if ctx_dir:
         _save_task_note(ctx_dir, task, "")
+
+    # Detect and save structured output for quick actions (no result case)
+    if client and plan_id:
+        full_output = '\n'.join(captured_texts)
+        structured = extract_structured_output(full_output)
+        if structured:
+            logger.info(f"[{task.id}] Found structured output: {structured['type']}")
+            try:
+                await client.save_structured_output(plan_id, structured)
+            except Exception as e:
+                logger.warning(f"[{task.id}] Failed to save structured output: {e}")
 
     return TaskResult(task_id=task.id, success=True)
 

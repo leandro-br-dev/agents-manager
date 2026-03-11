@@ -151,6 +151,26 @@ export function initDatabase() {
     }
   }
 
+  // Add type column to plans table if it doesn't exist
+  try {
+    db.exec("ALTER TABLE plans ADD COLUMN type TEXT DEFAULT 'workflow'")
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding type column:', e.message)
+    }
+  }
+
+  // Add structured_output column to plans table if it doesn't exist
+  try {
+    db.exec('ALTER TABLE plans ADD COLUMN structured_output TEXT')
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding structured_output column:', e.message)
+    }
+  }
+
   console.log('Database initialized successfully')
 }
 

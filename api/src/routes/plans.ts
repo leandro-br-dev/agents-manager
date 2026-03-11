@@ -229,6 +229,16 @@ router.get('/:id', authenticateToken, (req: Request, res: Response) => {
       log_count: logCount.count,
     }
 
+    // Parse structured_output if present
+    if (plan.structured_output) {
+      try {
+        planWithLogCount.structured_output = JSON.parse(plan.structured_output)
+      } catch (e) {
+        // Invalid JSON, leave as is
+        console.warn('Failed to parse structured_output for plan', id)
+      }
+    }
+
     res.json({ data: planWithLogCount, error: null })
   } catch (error) {
     console.error('Error fetching plan:', error)
@@ -570,5 +580,34 @@ export function recoverStuckPlans(db: any) {
     console.log(`[recovery] Marked ${result.changes} stuck plan(s) as failed`)
   }
 }
+
+// POST /api/plans/:id/structured-output - Save structured output from quick actions
+router.post('/:id/structured-output', authenticateToken, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const { output } = req.body
+
+    if (!output) {
+      return res.status(400).json({ data: null, error: 'output is required' })
+    }
+
+    const plan = db
+      .prepare('SELECT * FROM plans WHERE id = ?')
+      .get(id) as any
+
+    if (!plan) {
+      return res.status(404).json({ data: null, error: 'Plan not found' })
+    }
+
+    db.prepare(
+      'UPDATE plans SET structured_output = ? WHERE id = ?'
+    ).run(JSON.stringify(output), id)
+
+    return res.json({ data: { saved: true }, error: null })
+  } catch (error) {
+    console.error('Error saving structured output:', error)
+    res.status(500).json({ data: null, error: 'Failed to save structured output' })
+  }
+})
 
 export default router

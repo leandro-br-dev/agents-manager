@@ -7,6 +7,7 @@ import approvalsRouter from './routes/approvals.js'
 import daemonRouter from './routes/daemon.js'
 import projectsRouter from './routes/projects.js'
 import nativeSkillsRouter from './routes/nativeSkills.js'
+import quickActionsRouter from './routes/quickActions.js'
 import { db } from './db/index.js'
 
 const app = express()
@@ -70,6 +71,9 @@ app.use('/api/projects', projectsRouter)
 
 // Native skills routes
 app.use('/api/native-skills', nativeSkillsRouter)
+
+// Quick actions routes
+app.use('/api/quick-actions', quickActionsRouter)
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

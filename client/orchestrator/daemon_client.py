@@ -280,3 +280,31 @@ class DaemonClient:
 
         # Timeout reached
         return PlanResponse(data="timeout")
+
+    async def save_structured_output(self, plan_id: str, output: dict[str, Any]) -> PlanResponse:
+        """
+        Save structured output (plan/review/diagnosis) from a quick action.
+
+        POST /api/plans/:id/structured-output
+        Body: {output: {type: 'plan'|'review'|'diagnosis', content: {...}}}
+
+        Args:
+            plan_id: ID of the plan
+            output: Structured output with type and content
+
+        Returns:
+            PlanResponse with data={saved: true} or error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._client.post,
+                f"/plans/{plan_id}/structured-output",
+                json={"output": output},
+            )
+            return self._handle_response(response)
+        except httpx.HTTPError as e:
+            return PlanResponse(data=None, error=f"HTTP error: {e}")
+        except Exception as e:
+            return PlanResponse(data=None, error=f"Request failed: {e}")
