@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { apiClient } from './client'
+import { apiClient, apiFetch } from './client'
 
 export type Workspace = {
   id: string
@@ -156,5 +156,36 @@ export function useRenameAgent() {
         { name }
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: workspaceKeys.list() }),
+  })
+}
+
+export function useGetWorkspaceEnvironments(workspaceId: string) {
+  return useQuery({
+    queryKey: ['workspace-environments', workspaceId],
+    queryFn: () => apiClient.get<{ id: string; name: string; type: string; project_path: string }[]>(`/api/workspaces/${workspaceId}/environments`),
+    enabled: !!workspaceId,
+  })
+}
+
+export function useLinkEnvironment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, environment_id }: { workspaceId: string; environment_id: string }) =>
+      apiClient.post<{ linked: boolean }>(`/api/workspaces/${workspaceId}/environments`, {
+        environment_id
+      }),
+    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ['workspace-environments', vars.workspaceId] }),
+  })
+}
+
+export function useUnlinkEnvironment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, environment_id }: { workspaceId: string; environment_id: string }) =>
+      apiFetch<{ unlinked: boolean }>(`/api/workspaces/${workspaceId}/environments`, {
+        method: 'DELETE',
+        body: JSON.stringify({ environment_id })
+      }),
+    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ['workspace-environments', vars.workspaceId] }),
   })
 }

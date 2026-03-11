@@ -1,8 +1,8 @@
 import { useSearchParams } from 'react-router-dom'
-import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, type Workspace } from '../api/workspaces'
-import { useGetProjects } from '../api/projects'
+import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, type Workspace } from '../api/workspaces'
+import { useGetProjects, useGetAllEnvironments } from '../api/projects'
 import { useState } from 'react'
-import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil } from 'lucide-react'
+import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil, Link2, X } from 'lucide-react'
 import { PageHeader, Button, Card, Input, Select, ConfirmDialog, EmptyState } from '@/components'
 
 export default function AgentsPage() {
@@ -253,7 +253,7 @@ function WorkspaceCard({
 
 function WorkspaceDetail({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const { data: workspace, isLoading, error } = useGetWorkspace(workspaceId)
-  const [activeTab, setActiveTab] = useState<'claude' | 'settings' | 'skills' | 'agents'>('claude')
+  const [activeTab, setActiveTab] = useState<'claude' | 'settings' | 'skills' | 'agents' | 'environments'>('claude')
   const [editingName, setEditingName] = useState(false)
   const [newName, setNewName] = useState(workspaceId)
   const renameAgent = useRenameAgent()
@@ -347,6 +347,10 @@ function WorkspaceDetail({ workspaceId, onClose }: { workspaceId: string; onClos
             <Users size={18} />
             Agents ({workspace.agents.length})
           </TabButton>
+          <TabButton active={activeTab === 'environments'} onClick={() => setActiveTab('environments')}>
+            <Link2 size={18} />
+            Environments
+          </TabButton>
         </nav>
       </div>
 
@@ -354,6 +358,7 @@ function WorkspaceDetail({ workspaceId, onClose }: { workspaceId: string; onClos
       {activeTab === 'settings' && <SettingsTab workspaceId={workspaceId} settings={workspace.settings} />}
       {activeTab === 'skills' && <SkillsTab workspaceId={workspaceId} skills={workspace.skills} />}
       {activeTab === 'agents' && <AgentsTab workspaceId={workspaceId} agents={workspace.agents} />}
+      {activeTab === 'environments' && <EnvironmentsTab workspaceId={workspaceId} />}
     </div>
   )
 }
@@ -878,6 +883,147 @@ Descreva a especialidade e comportamento deste agente.
         onConfirm={confirmDelete}
         onCancel={() => setDeleteConfirm(null)}
       />
+    </div>
+  )
+}
+
+function EnvironmentsTab({ workspaceId }: { workspaceId: string }) {
+  const { data: linkedEnvs, isLoading } = useGetWorkspaceEnvironments(workspaceId)
+  const { data: allEnvironments } = useGetAllEnvironments()
+  const [linkingEnv, setLinkingEnv] = useState(false)
+  const [selectedEnvToLink, setSelectedEnvToLink] = useState('')
+
+  const linkEnv = useLinkEnvironment()
+  const unlinkEnv = useUnlinkEnvironment()
+
+  // Filter out already linked environments from the available options
+  const availableEnvironments = allEnvironments?.filter(
+    env => !linkedEnvs?.some(linked => linked.id === env.id)
+  ) || []
+
+  if (isLoading) return <div className="p-8">Loading environments...</div>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">Linked Environments</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Link environments to auto-populate additionalDirectories in settings.local.json
+          </p>
+        </div>
+        <Button
+          variant="primary"
+          onClick={() => setLinkingEnv(true)}
+          disabled={availableEnvironments.length === 0}
+        >
+          <Link2 size={16} /> Link Environment
+        </Button>
+      </div>
+
+      {!linkedEnvs || linkedEnvs.length === 0 ? (
+        <Card>
+          <EmptyState
+            title="No environments linked"
+            description="Link an environment to automatically add its project_path to the agent's additionalDirectories permissions."
+          />
+        </Card>
+      ) : (
+        <Card padding="none">
+          <div className="divide-y divide-gray-200">
+            {linkedEnvs.map((env) => (
+              <div key={env.id} className="p-4 flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium text-gray-900">{env.name}</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                      {env.type}
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-gray-500">{env.project_path}</div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => unlinkEnv.mutate({ workspaceId, environment_id: env.id })}
+                  title="Unlink environment"
+                  disabled={unlinkEnv.isPending}
+                >
+                  <X size={16} />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {linkingEnv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setLinkingEnv(false)} />
+          <div className="relative bg-white rounded-lg border border-gray-200 p-6 max-w-md w-full mx-4 shadow-lg">
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Link Environment</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Select an environment to link to this agent. Its project_path will be automatically added to additionalDirectories.
+            </p>
+
+            {availableEnvironments.length === 0 ? (
+              <p className="text-sm text-gray-500 mb-4">
+                No available environments to link. All environments are already linked to this agent.
+              </p>
+            ) : (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Environment</label>
+                  <Select
+                    value={selectedEnvToLink}
+                    onChange={(e) => setSelectedEnvToLink(e.target.value)}
+                  >
+                    <option value="" disabled>Select an environment...</option>
+                    {availableEnvironments.map((env) => (
+                      <option key={env.id} value={env.id}>
+                        {env.name} ({env.project_name || 'Unknown Project'}) - {env.type}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setLinkingEnv(false)
+                      setSelectedEnvToLink('')
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      if (selectedEnvToLink) {
+                        linkEnv.mutate(
+                          { workspaceId, environment_id: selectedEnvToLink },
+                          {
+                            onSuccess: () => {
+                              setLinkingEnv(false)
+                              setSelectedEnvToLink('')
+                            }
+                          }
+                        )
+                      }
+                    }}
+                    disabled={!selectedEnvToLink}
+                    loading={linkEnv.isPending}
+                  >
+                    Link
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
