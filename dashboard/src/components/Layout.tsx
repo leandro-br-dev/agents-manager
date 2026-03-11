@@ -1,10 +1,13 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Settings, Users, Workflow, AlertCircle, FolderOpen } from 'lucide-react'
+import { useState } from 'react'
+import { Settings, Users, Workflow, AlertCircle, FolderOpen, Zap } from 'lucide-react'
 import { useGetPendingApprovals } from '@/api/approvals'
+import { QuickActionModal } from '@/components/QuickActionModal'
 
 export default function Layout() {
   const location = useLocation()
   const { data: pendingApprovals = [] } = useGetPendingApprovals()
+  const [showQuickAction, setShowQuickAction] = useState(false)
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -29,9 +32,22 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto font-sans">
+      <main className="flex-1 overflow-auto font-sans relative">
+        {/* Quick Action button in top-right */}
+        <div className="absolute top-4 right-4 z-10">
+          <button
+            onClick={() => setShowQuickAction(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-md hover:bg-gray-800 transition-colors shadow-sm"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            Quick Action
+          </button>
+        </div>
         <Outlet />
       </main>
+
+      {/* Quick Action Modal */}
+      {showQuickAction && <QuickActionModal onClose={() => setShowQuickAction(false)} />}
     </div>
   )
 }

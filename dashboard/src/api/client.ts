@@ -1,5 +1,5 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-const API_TOKEN = import.meta.env.VITE_API_TOKEN || 'your-api-token';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+export const API_TOKEN = import.meta.env.VITE_API_TOKEN || 'your-api-token';
 
 export interface ApiError {
   message: string;

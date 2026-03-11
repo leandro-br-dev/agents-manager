@@ -24,6 +24,10 @@ export interface Plan {
   completed_at?: string;
   updated_at: string;
   result?: string;
+  structured_output?: {
+    type: string;
+    content: any;
+  };
 }
 
 export interface PlanLog {
