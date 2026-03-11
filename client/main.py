@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import os
 import signal
 import socket
@@ -88,6 +89,9 @@ async def run_daemon(server_url: str, token: str) -> None:
     logger.info(f"Daemon started - polling {server_url} for plans and chat sessions")
     logger.info(f"Client ID: {socket.gethostname()}")
 
+    # Track running sessions to avoid processing the same session multiple times
+    running_sessions: set[str] = set()
+
     try:
         while not shutdown_requested:
             # Poll for pending plans
@@ -165,12 +169,30 @@ async def run_daemon(server_url: str, token: str) -> None:
                     if shutdown_requested:
                         break
 
+                    session_id = session_data.get('id')
+                    if not session_id:
+                        continue
+
+                    # Skip if already processing this session
+                    if session_id in running_sessions:
+                        continue
+
+                    # Mark as running
+                    running_sessions.add(session_id)
+
                     # Create task to process session asynchronously
-                    anyio.create_task(process_chat_session(session_data, client))
+                    # Use default argument to capture current session_data value (closure bug fix)
+                    async def _run_session(s=session_data):
+                        try:
+                            await process_chat_session(s, client)
+                        finally:
+                            running_sessions.discard(s.get('id'))
+
+                    asyncio.create_task(_run_session())
 
             # Wait before next poll (unless shutting down)
             if not shutdown_requested:
-                await anyio.sleep(5)
+                await asyncio.sleep(5)
 
     except Exception as e:
         logger.error(f"Daemon error: {e}")
@@ -363,4 +385,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    anyio.run(main)
+    asyncio.run(main())
