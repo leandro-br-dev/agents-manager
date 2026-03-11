@@ -1,8 +1,8 @@
 import { useSearchParams } from 'react-router-dom'
-import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, useGetAgentTemplates, type Workspace } from '../api/workspaces'
+import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, useGetAgentTemplates, useGetNativeSkills, useInstallNativeSkill, useImportCustomSkill, type Workspace } from '../api/workspaces'
 import { useGetProjects, useGetAllEnvironments } from '../api/projects'
-import { useState } from 'react'
-import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil, Link2, X } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil, Link2, X, Upload } from 'lucide-react'
 import { PageHeader, Button, Card, Input, Select, ConfirmDialog, EmptyState } from '@/components'
 
 export default function AgentsPage() {
@@ -587,10 +587,14 @@ function SkillsTab({ workspaceId, skills }: { workspaceId: string; skills: Array
   const [skillName, setSkillName] = useState('')
   const [skillContent, setSkillContent] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const importSkillRef = useRef<HTMLInputElement>(null)
 
   const installSkill = useInstallSkill(workspaceId)
   const deleteSkill = useDeleteSkill(workspaceId)
   const { data: skillData } = useGetSkill(workspaceId, editingSkill || '')
+  const { data: nativeSkills = [] } = useGetNativeSkills()
+  const installNativeSkill = useInstallNativeSkill()
+  const importCustomSkill = useImportCustomSkill()
 
   const handleNewSkill = () => {
     setSkillName('')
@@ -646,6 +650,24 @@ description: "Descreva quando usar esta skill"
     }
   }
 
+  const handleSkillFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const content = await file.text()
+    // Nome da skill = nome do arquivo sem extensão
+    const skillName = file.name.replace(/\.(md|txt|markdown)$/, '')
+
+    await importCustomSkill.mutateAsync({
+      workspaceId,
+      skillName,
+      content,
+    })
+    if (importSkillRef.current) {
+      importSkillRef.current.value = ''
+    }
+  }
+
   // Update content when editing skill data loads
   if (editingSkill && skillData && skillContent === '') {
     setSkillContent(skillData.content)
@@ -663,76 +685,128 @@ description: "Descreva quando usar esta skill"
 ## Como usar
 `
 
+  // Get list of installed skill names
+  const installedSkillNames = skills.map((s: any) => s.name)
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-900">Skills ({skills.length})</h3>
-        <Button variant="primary" onClick={handleNewSkill}>
-          <Plus size={16} /> New Skill
-        </Button>
+        <div className="flex gap-2">
+          <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-md text-xs text-gray-700 hover:bg-gray-50">
+            <Upload className="h-3.5 w-3.5" />
+            Import .md / .txt
+            <input
+              ref={importSkillRef}
+              type="file"
+              accept=".md,.txt,.markdown"
+              className="hidden"
+              onChange={handleSkillFileImport}
+            />
+          </label>
+          <Button variant="primary" onClick={handleNewSkill}>
+            <Plus size={16} /> New Skill
+          </Button>
+        </div>
       </div>
 
-      {(showNewForm || editingSkill) && (
-        <Card>
-          <div className="mb-3">
-            <Input
-              label="Name"
-              value={skillName}
-              onChange={(e) => setSkillName(e.target.value)}
-              placeholder="my-skill"
-              className="font-mono"
-            />
-          </div>
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
-            <textarea
-              value={skillContent}
-              onChange={(e) => setSkillContent(e.target.value)}
-              className="w-full h-64 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder={SKILL_TEMPLATE}
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleSave}
-              disabled={installSkill.isPending || !skillName || !skillContent}
-              variant="primary"
-            >
-              {installSkill.isPending ? 'Saving...' : 'Save'}
-            </Button>
-            <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
-          </div>
-        </Card>
-      )}
-
-      <Card padding="none">
-        <div className="divide-y divide-gray-200">
-          {skills.map((skill) => (
-            <div key={skill.name} className="p-4 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <Code size={18} className="text-gray-400" />
+      {/* Native Skills Section */}
+      <div className="mb-6">
+        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Native Skills</h4>
+        <div className="space-y-2">
+          {nativeSkills.map(skill => {
+            const isInstalled = installedSkillNames.includes(skill.id)
+            return (
+              <div key={skill.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded border border-gray-200">
                 <div>
-                  <div className="font-medium text-gray-900">{skill.name}</div>
-                  {skill.hasSkillMd && (
-                    <span className="text-xs text-green-600">✓ SKILL.md</span>
-                  )}
+                  <p className="text-sm font-medium text-gray-800">{skill.name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{skill.description}</p>
                 </div>
+                {isInstalled ? (
+                  <span className="text-xs text-green-600 font-medium">Installed</span>
+                ) : (
+                  <Button
+                    variant="secondary" size="sm"
+                    onClick={() => installNativeSkill.mutate({ workspaceId, skillId: skill.id })}
+                    disabled={installNativeSkill.isPending}
+                  >
+                    {installNativeSkill.isPending ? 'Installing...' : 'Add'}
+                  </Button>
+                )}
               </div>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => handleEdit(skill.name)} title="Edit skill">
-                  <Edit3 size={16} />
-                </Button>
-                <Button variant="danger" size="sm" onClick={() => handleDelete(skill.name)} title="Delete skill">
-                  <Trash2 size={16} />
-                </Button>
-              </div>
-            </div>
-          ))}
-          {skills.length === 0 && (
-            <EmptyState title="No skills installed" />
+            )
+          })}
+          {nativeSkills.length === 0 && (
+            <div className="text-sm text-gray-500 italic">No native skills available</div>
           )}
         </div>
-      </Card>
+      </div>
+
+      {/* Custom Skills Section */}
+      <div>
+        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Custom Skills</h4>
+        {(showNewForm || editingSkill) && (
+          <Card>
+            <div className="mb-3">
+              <Input
+                label="Name"
+                value={skillName}
+                onChange={(e) => setSkillName(e.target.value)}
+                placeholder="my-skill"
+                className="font-mono"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Content</label>
+              <textarea
+                value={skillContent}
+                onChange={(e) => setSkillContent(e.target.value)}
+                className="w-full h-64 px-3 py-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder={SKILL_TEMPLATE}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSave}
+                disabled={installSkill.isPending || !skillName || !skillContent}
+                variant="primary"
+              >
+                {installSkill.isPending ? 'Saving...' : 'Save'}
+              </Button>
+              <Button variant="secondary" onClick={handleCancel}>Cancel</Button>
+            </div>
+          </Card>
+        )}
+
+        <Card padding="none">
+          <div className="divide-y divide-gray-200">
+            {skills.map((skill) => (
+              <div key={skill.name} className="p-4 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Code size={18} className="text-gray-400" />
+                  <div>
+                    <div className="font-medium text-gray-900">{skill.name}</div>
+                    {skill.hasSkillMd && (
+                      <span className="text-xs text-green-600">✓ SKILL.md</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => handleEdit(skill.name)} title="Edit skill">
+                    <Edit3 size={16} />
+                  </Button>
+                  <Button variant="danger" size="sm" onClick={() => handleDelete(skill.name)} title="Delete skill">
+                    <Trash2 size={16} />
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {skills.length === 0 && (
+              <EmptyState title="No custom skills installed" />
+            )}
+          </div>
+        </Card>
+      </div>
 
       <ConfirmDialog
         open={deleteConfirm !== null}

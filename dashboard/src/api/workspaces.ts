@@ -197,3 +197,33 @@ export function useUnlinkEnvironment() {
     onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ['workspace-environments', vars.workspaceId] }),
   })
 }
+
+export function useGetNativeSkills() {
+  return useQuery({
+    queryKey: ['native-skills'] as const,
+    queryFn: () => apiClient.get<Array<{ id: string; name: string; description: string; path: string }>>('/api/native-skills'),
+  })
+}
+
+export function useInstallNativeSkill() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, skillId }: { workspaceId: string; skillId: string }) =>
+      apiClient.post<{ installed: boolean; path: string }>(
+        `/api/workspaces/${workspaceId}/native-skills/${skillId}`
+      ),
+    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: workspaceKeys.detail(vars.workspaceId) }),
+  })
+}
+
+export function useImportCustomSkill() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, skillName, content }: { workspaceId: string; skillName: string; content: string }) =>
+      apiClient.post<{ created: boolean; path: string }>(
+        `/api/workspaces/${workspaceId}/skills`,
+        { name: skillName, content }
+      ),
+    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: workspaceKeys.detail(vars.workspaceId) }),
+  })
+}
