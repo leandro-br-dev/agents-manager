@@ -308,3 +308,82 @@ class DaemonClient:
             return PlanResponse(data=None, error=f"HTTP error: {e}")
         except Exception as e:
             return PlanResponse(data=None, error=f"Request failed: {e}")
+
+    # Chat session methods
+
+    def get_pending_sessions(self) -> PlanResponse:
+        """
+        Poll for pending chat sessions.
+
+        GET /api/sessions/pending
+
+        Returns:
+            PlanResponse with data=list[Session] or error
+        """
+        try:
+            response = self._client.get("/sessions/pending")
+            return self._handle_response(response)
+        except httpx.HTTPError as e:
+            return PlanResponse(data=None, error=f"HTTP error: {e}")
+        except Exception as e:
+            return PlanResponse(data=None, error=f"Request failed: {e}")
+
+    def save_sdk_session_id(self, session_id: str, sdk_session_id: str) -> PlanResponse:
+        """
+        Save SDK session ID for a chat session.
+
+        POST /api/sessions/:id/sdk-session
+        Body: {sdk_session_id: string}
+
+        Args:
+            session_id: ID of the session
+            sdk_session_id: SDK session ID to persist
+
+        Returns:
+            PlanResponse with data=updated_session or error
+        """
+        try:
+            response = self._client.post(
+                f"/sessions/{session_id}/sdk-session",
+                json={"sdk_session_id": sdk_session_id},
+            )
+            return self._handle_response(response)
+        except httpx.HTTPError as e:
+            return PlanResponse(data=None, error=f"HTTP error: {e}")
+        except Exception as e:
+            return PlanResponse(data=None, error=f"Request failed: {e}")
+
+    def save_assistant_message(
+        self,
+        session_id: str,
+        content: str,
+        structured_output: dict[str, Any] | None = None,
+    ) -> PlanResponse:
+        """
+        Save an assistant message to a chat session.
+
+        POST /api/sessions/:id/assistant-message
+        Body: {content: string, structured_output?: dict}
+
+        Args:
+            session_id: ID of the session
+            content: Message content
+            structured_output: Optional structured output (plan/review/diagnosis)
+
+        Returns:
+            PlanResponse with data=updated_session or error
+        """
+        try:
+            body = {"content": content}
+            if structured_output is not None:
+                body["structured_output"] = structured_output
+
+            response = self._client.post(
+                f"/sessions/{session_id}/assistant-message",
+                json=body,
+            )
+            return self._handle_response(response)
+        except httpx.HTTPError as e:
+            return PlanResponse(data=None, error=f"HTTP error: {e}")
+        except Exception as e:
+            return PlanResponse(data=None, error=f"Request failed: {e}")

@@ -322,3 +322,113 @@ class TestResponseHandling:
 
         assert result.data is None
         assert "Failed to parse response" in result.error
+
+
+class TestChatSessionMethods:
+    """Test chat session methods."""
+
+    def test_get_pending_sessions_success(self, mock_client):
+        """Test successful retrieval of pending sessions."""
+        client, mock_http = mock_client
+
+        # Mock API response with envelope
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": [
+                {
+                    "id": "session-1",
+                    "name": "Test Session",
+                    "workspace_path": "/path/to/workspace",
+                    "status": "waiting",
+                    "last_user_message": "Hello",
+                }
+            ],
+            "error": None,
+        }
+        mock_http.get.return_value = mock_response
+
+        result = client.get_pending_sessions()
+
+        assert result.error is None
+        assert len(result.data) == 1
+        assert result.data[0]["id"] == "session-1"
+        mock_http.get.assert_called_once_with("/sessions/pending")
+
+    def test_save_sdk_session_id_success(self, mock_client):
+        """Test successful saving of SDK session ID."""
+        client, mock_http = mock_client
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": {
+                "id": "session-1",
+                "sdk_session_id": "sdk-session-123",
+            },
+            "error": None,
+        }
+        mock_http.post.return_value = mock_response
+
+        result = client.save_sdk_session_id("session-1", "sdk-session-123")
+
+        assert result.error is None
+        assert result.data["sdk_session_id"] == "sdk-session-123"
+        mock_http.post.assert_called_once_with(
+            "/sessions/session-1/sdk-session",
+            json={"sdk_session_id": "sdk-session-123"},
+        )
+
+    def test_save_assistant_message_success(self, mock_client):
+        """Test successful saving of assistant message."""
+        client, mock_http = mock_client
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": {
+                "id": "session-1",
+                "status": "idle",
+            },
+            "error": None,
+        }
+        mock_http.post.return_value = mock_response
+
+        result = client.save_assistant_message(
+            "session-1",
+            "Hello, how can I help?",
+            None,
+        )
+
+        assert result.error is None
+        mock_http.post.assert_called_once_with(
+            "/sessions/session-1/assistant-message",
+            json={"content": "Hello, how can I help?"},
+        )
+
+    def test_save_assistant_message_with_structured_output(self, mock_client):
+        """Test saving assistant message with structured output."""
+        client, mock_http = mock_client
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": {
+                "id": "session-1",
+                "status": "idle",
+            },
+            "error": None,
+        }
+        mock_http.post.return_value = mock_response
+
+        structured_output = {
+            "type": "plan",
+            "content": {"tasks": ["task1", "task2"]},
+        }
+
+        result = client.save_assistant_message(
+            "session-1",
+            "Here is a plan for you",
+            structured_output,
+        )
+
+        assert result.error is None
+        call_args = mock_http.post.call_args
+        assert call_args[1]["json"]["content"] == "Here is a plan for you"
+        assert call_args[1]["json"]["structured_output"] == structured_output

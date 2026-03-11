@@ -66,7 +66,7 @@ def dry_run(plan_path: str) -> None:
 
 async def run_daemon(server_url: str, token: str) -> None:
     """
-    Run in daemon mode: poll API for plans and execute them.
+    Run in daemon mode: poll API for plans and chat sessions to execute.
 
     Args:
         server_url: Base URL of the API server
@@ -79,13 +79,13 @@ async def run_daemon(server_url: str, token: str) -> None:
 
     def signal_handler(signum, frame):
         nonlocal shutdown_requested
-        logger.info(f"Received signal {signum}, shutting down after current plan...")
+        logger.info(f"Received signal {signum}, shutting down after current tasks...")
         shutdown_requested = True
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    logger.info(f"Daemon started - polling {server_url} for plans")
+    logger.info(f"Daemon started - polling {server_url} for plans and chat sessions")
     logger.info(f"Client ID: {socket.gethostname()}")
 
     try:
@@ -153,6 +153,20 @@ async def run_daemon(server_url: str, token: str) -> None:
                         logger.error(f"Failed to complete plan: {complete_response.error}")
                     else:
                         logger.info(f"Plan {plan_name} marked as {status}")
+
+            # Poll for pending chat sessions
+            sessions_response = client.get_pending_sessions()
+
+            if sessions_response.error:
+                logger.warn(f"Failed to fetch pending sessions: {sessions_response.error}")
+            elif sessions_response.data and len(sessions_response.data) > 0:
+                # Process each pending session
+                for session_data in sessions_response.data:
+                    if shutdown_requested:
+                        break
+
+                    # Create task to process session asynchronously
+                    anyio.create_task(process_chat_session(session_data, client))
 
             # Wait before next poll (unless shutting down)
             if not shutdown_requested:
@@ -232,6 +246,65 @@ async def run_plan_with_logging(
         # Notify API of failure
         client.complete_plan(plan_id, 'failed', error_msg)
         return False, error_msg
+
+
+async def process_chat_session(session: dict, client: object) -> None:
+    """
+    Process a chat session from the daemon.
+
+    Executes a single turn of the conversation and saves the assistant's response.
+
+    Args:
+        session: Session data from the API
+        client: Daemon API client
+    """
+    from orchestrator.chat_runner import run_chat_turn
+
+    session_id = session['id']
+    workspace_path = session['workspace_path']
+    cwd = session.get('cwd') or workspace_path
+    sdk_session_id = session.get('sdk_session_id')
+    user_message = session.get('last_user_message', '')
+
+    logger.info(f'Processing chat session {session_id[:8]}...')
+
+    async def on_sdk_session(new_id: str):
+        """Callback when SDK session ID changes."""
+        response = client.save_sdk_session_id(session_id, new_id)
+        if response.error:
+            logger.error(f'Failed to save SDK session ID: {response.error}')
+        else:
+            logger.debug(f'Session {session_id[:8]} sdk_id: {new_id[:8]}...')
+
+    async def on_response(text: str, structured):
+        """Callback when assistant response is complete."""
+        response = client.save_assistant_message(session_id, text, structured)
+        if response.error:
+            logger.error(f'Failed to save assistant message: {response.error}')
+
+    async def log_callback(logs: list):
+        """Callback for streaming logs."""
+        # We don't need to stream logs separately for chat
+        # The full response is saved via on_response
+        pass
+
+    try:
+        new_sdk_session_id = await run_chat_turn(
+            session_id=session_id,
+            message=user_message,
+            workspace_path=workspace_path,
+            cwd=cwd,
+            sdk_session_id=sdk_session_id,
+            on_sdk_session=on_sdk_session,
+            on_response=on_response,
+            log_callback=log_callback,
+        )
+
+        logger.info(f'Session {session_id[:8]} completed')
+    except Exception as e:
+        logger.error(f'Chat session {session_id[:8]} error: {e}')
+        # Save error as assistant message
+        await on_response(f'Error: {str(e)}', None)
 
 
 async def main() -> None:
