@@ -9,6 +9,7 @@ export type Workspace = {
   hasSettings: boolean
   hasClaude: boolean
   baseUrl: string | null
+  project_id: string | null
 }
 
 export type WorkspaceDetail = {
@@ -19,6 +20,7 @@ export type WorkspaceDetail = {
   settings: any
   skills: Array<{ name: string; hasSkillMd: boolean }>
   agents: Array<{ name: string; file: string }>
+  project_id: string | null
 }
 
 export const workspaceKeys = {

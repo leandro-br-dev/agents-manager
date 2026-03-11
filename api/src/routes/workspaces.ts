@@ -29,6 +29,7 @@ interface WorkspaceInfo {
   hasClaude: boolean
   baseUrl: string | null
   type: 'agent' | 'env-agent' | 'legacy'
+  project_id: string | null
 }
 
 function readJsonSafe(filePath: string): any {
@@ -65,6 +66,11 @@ function listAllWorkspaces(): WorkspaceInfo[] {
         const claudeMdPath = path.join(fullPath, 'CLAUDE.md')
         const settings = readJsonSafe(settingsPath)
 
+        // Fetch project_id from project_agents table
+        const projectLink = db.prepare(
+          'SELECT project_id FROM project_agents WHERE workspace_path = ? LIMIT 1'
+        ).get(fullPath) as any
+
         results.push({
           id: Buffer.from(fullPath).toString('base64url'),
           name: agentDir.name,
@@ -73,7 +79,8 @@ function listAllWorkspaces(): WorkspaceInfo[] {
           hasSettings: fs.existsSync(settingsPath),
           hasClaude: fs.existsSync(claudeMdPath),
           baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
-          type: 'agent'
+          type: 'agent',
+          project_id: projectLink?.project_id ?? null
         })
       }
     }
@@ -89,6 +96,11 @@ function listAllWorkspaces(): WorkspaceInfo[] {
         const claudeMdPath = path.join(agentCoderPath, 'CLAUDE.md')
         const settings = readJsonSafe(settingsPath)
 
+        // Fetch project_id from project_agents table
+        const projectLink = db.prepare(
+          'SELECT project_id FROM project_agents WHERE workspace_path = ? LIMIT 1'
+        ).get(agentCoderPath) as any
+
         results.push({
           id: Buffer.from(agentCoderPath).toString('base64url'),
           name: `${projectDir.name}/${envDir.name}`,
@@ -97,7 +109,8 @@ function listAllWorkspaces(): WorkspaceInfo[] {
           hasSettings: fs.existsSync(settingsPath),
           hasClaude: fs.existsSync(claudeMdPath),
           baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
-          type: 'env-agent'
+          type: 'env-agent',
+          project_id: projectLink?.project_id ?? null
         })
       }
     }
@@ -109,6 +122,11 @@ function listAllWorkspaces(): WorkspaceInfo[] {
       const claudeMdPath = path.join(legacyAgentCoderPath, 'CLAUDE.md')
       const settings = readJsonSafe(settingsPath)
 
+      // Fetch project_id from project_agents table
+      const projectLink = db.prepare(
+        'SELECT project_id FROM project_agents WHERE workspace_path = ? LIMIT 1'
+      ).get(legacyAgentCoderPath) as any
+
       results.push({
         id: Buffer.from(legacyAgentCoderPath).toString('base64url'),
         name: projectDir.name,
@@ -117,7 +135,8 @@ function listAllWorkspaces(): WorkspaceInfo[] {
         hasSettings: fs.existsSync(settingsPath),
         hasClaude: fs.existsSync(claudeMdPath),
         baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
-        type: 'legacy'
+        type: 'legacy',
+        project_id: projectLink?.project_id ?? null
       })
     }
   }
@@ -226,6 +245,7 @@ router.get('/:id', authenticateToken, (req, res) => {
       skills,
       agents,
       environments: linkedEnvs,
+      project_id: workspace.project_id,
     },
     error: null
   })

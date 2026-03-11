@@ -1,7 +1,7 @@
 import { useSearchParams } from 'react-router-dom'
 import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, useGetAgentTemplates, useGetNativeSkills, useInstallNativeSkill, useImportCustomSkill, type Workspace } from '../api/workspaces'
 import { useGetProjects, useGetAllEnvironments } from '../api/projects'
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil, Link2, X, Upload } from 'lucide-react'
 import { PageHeader, Button, Card, Input, Select, ConfirmDialog, EmptyState } from '@/components'
 
@@ -989,17 +989,35 @@ Descreva a especialidade e comportamento deste agente.
 
 function EnvironmentsTab({ workspaceId }: { workspaceId: string }) {
   const { data: linkedEnvs, isLoading } = useGetWorkspaceEnvironments(workspaceId)
+  const { data: workspace } = useGetWorkspace(workspaceId)
   const { data: allEnvironments } = useGetAllEnvironments()
+  const { data: projects } = useGetProjects()
   const [linkingEnv, setLinkingEnv] = useState(false)
   const [selectedEnvToLink, setSelectedEnvToLink] = useState('')
 
   const linkEnv = useLinkEnvironment()
   const unlinkEnv = useUnlinkEnvironment()
 
-  // Filter out already linked environments from the available options
-  const availableEnvironments = allEnvironments?.filter(
-    env => !linkedEnvs?.some(linked => linked.id === env.id)
-  ) || []
+  // Identify the project of the agent
+  const agentProjectId = workspace?.project_id ?? null
+
+  // Filter environments by agent's project
+  const availableEnvironments = useMemo(() => {
+    if (!agentProjectId) {
+      // Agent without project: show all environments with project indication
+      return allEnvironments?.filter(
+        env => !linkedEnvs?.some(linked => linked.id === env.id)
+      ) || []
+    }
+
+    // Agent with project: show only environments from the same project
+    const project = projects?.find(p => p.id === agentProjectId)
+    const projectEnvs = project?.environments ?? []
+
+    return projectEnvs
+      .filter(env => !linkedEnvs?.some(linked => linked.id === env.id))
+      .map(env => ({ ...env, project_name: project?.name ?? '' })) || []
+  }, [agentProjectId, allEnvironments, linkedEnvs, projects])
 
   if (isLoading) return <div className="p-8">Loading environments...</div>
 
@@ -1063,17 +1081,28 @@ function EnvironmentsTab({ workspaceId }: { workspaceId: string }) {
           <div className="relative bg-white rounded-lg border border-gray-200 p-6 max-w-md w-full mx-4 shadow-lg">
             <h3 className="text-sm font-semibold text-gray-900 mb-2">Link Environment</h3>
             <p className="text-sm text-gray-500 mb-4">
-              Select an environment to link to this agent. Its project_path will be automatically added to additionalDirectories.
+              {agentProjectId
+                ? 'Select an environment from this agent\'s project. Its project_path will be automatically added to additionalDirectories.'
+                : 'Select an environment to link to this agent. Its project_path will be automatically added to additionalDirectories.'}
             </p>
 
             {availableEnvironments.length === 0 ? (
-              <p className="text-sm text-gray-500 mb-4">
-                No available environments to link. All environments are already linked to this agent.
-              </p>
+              <div className="text-sm text-gray-500 mb-4">
+                {agentProjectId
+                  ? (
+                    <>
+                      No environments found for this project.
+                      <a href="/projects" className="underline ml-1 text-blue-600 hover:text-blue-800">Create one in Projects</a>
+                    </>
+                  )
+                  : 'No available environments to link. All environments are already linked to this agent.'}
+              </div>
             ) : (
               <>
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Environment</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {agentProjectId ? 'Environment' : 'Environment (all projects)'}
+                  </label>
                   <Select
                     value={selectedEnvToLink}
                     onChange={(e) => setSelectedEnvToLink(e.target.value)}
@@ -1081,7 +1110,7 @@ function EnvironmentsTab({ workspaceId }: { workspaceId: string }) {
                     <option value="" disabled>Select an environment...</option>
                     {availableEnvironments.map((env) => (
                       <option key={env.id} value={env.id}>
-                        {env.name} ({env.project_name || 'Unknown Project'}) - {env.type}
+                        {agentProjectId ? env.name : `${env.project_name} / ${env.name}`} - {env.type}
                       </option>
                     ))}
                   </Select>
