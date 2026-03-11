@@ -7,6 +7,7 @@ import AgentsPage from './pages/AgentsPage'
 import ProjectsPage from './pages/ProjectsPage'
 import SettingsPage from './pages/SettingsPage'
 import ApprovalsPage from './pages/ApprovalsPage'
+import ChatPage from './pages/ChatPage'
 
 export const router = createBrowserRouter([
   {
@@ -32,6 +33,10 @@ export const router = createBrowserRouter([
       {
         path: 'agents',
         element: <AgentsPage />,
+      },
+      {
+        path: 'chat',
+        element: <ChatPage />,
       },
       {
         path: 'projects',

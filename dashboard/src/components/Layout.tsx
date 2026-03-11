@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useState } from 'react'
-import { Settings, Users, Workflow, AlertCircle, FolderOpen, Zap } from 'lucide-react'
+import { Settings, Users, Workflow, AlertCircle, FolderOpen, Zap, MessageSquare } from 'lucide-react'
 import { useGetPendingApprovals } from '@/api/approvals'
 import { QuickActionModal } from '@/components/QuickActionModal'
 
@@ -20,6 +20,7 @@ export default function Layout() {
           <NavItem icon={<Workflow size={20} />} label="Workflows" href="/" isActive={location.pathname === '/' || location.pathname === '/workflows'} />
           <NavItem icon={<FolderOpen size={20} />} label="Projects" href="/projects" isActive={location.pathname === '/projects'} />
           <NavItem icon={<Users size={20} />} label="Agents" href="/agents" isActive={location.pathname === '/agents'} />
+          <NavItem icon={<MessageSquare size={20} />} label="Chat" href="/chat" isActive={location.pathname === '/chat'} />
           <NavItem
             icon={<AlertCircle size={20} />}
             label="Approvals"
