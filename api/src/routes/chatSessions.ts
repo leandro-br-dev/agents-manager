@@ -42,6 +42,47 @@ router.get('/pending', authenticateToken, (_req, res) => {
   return res.json({ data: sessions, error: null })
 })
 
+// DELETE /api/sessions/:id/messages/:msgId — deletar mensagem individual
+router.delete('/:id/messages/:msgId', authenticateToken, (req, res) => {
+  const { id, msgId } = req.params
+
+  // Verificar que a mensagem pertence à sessão
+  const msg = db.prepare(
+    'SELECT * FROM chat_messages WHERE id = ? AND session_id = ?'
+  ).get(msgId, id)
+
+  if (!msg) {
+    return res.status(404).json({ data: null, error: 'Message not found' })
+  }
+
+  db.prepare('DELETE FROM chat_messages WHERE id = ?').run(msgId)
+
+  return res.json({ data: { deleted: true }, error: null })
+})
+
+// DELETE /api/sessions/:id/messages — limpar todo o histórico
+router.delete('/:id/messages', authenticateToken, (req, res) => {
+  const { id } = req.params
+
+  // Verificar que a sessão existe
+  const session = db.prepare('SELECT id FROM chat_sessions WHERE id = ?').get(id)
+  if (!session) {
+    return res.status(404).json({ data: null, error: 'Session not found' })
+  }
+
+  const result = db.prepare('DELETE FROM chat_messages WHERE session_id = ?').run(id)
+
+  // Resetar sdk_session_id pois o contexto foi perdido
+  db.prepare(
+    "UPDATE chat_sessions SET sdk_session_id = NULL, status = 'idle', updated_at = datetime('now') WHERE id = ?"
+  ).run(id)
+
+  return res.json({
+    data: { deleted: result.changes, context_reset: true },
+    error: null
+  })
+})
+
 // GET /api/sessions/:id — detalhes + mensagens
 router.get('/:id', authenticateToken, (req, res) => {
   const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(req.params.id)

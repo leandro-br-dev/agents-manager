@@ -50,3 +50,21 @@ export function useDeleteSession() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['sessions'] }),
   })
 }
+
+export function useDeleteMessage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ sessionId, messageId }: { sessionId: string; messageId: string }) =>
+      apiFetch(`/api/sessions/${sessionId}/messages/${messageId}`, { method: 'DELETE' }),
+    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ['session', vars.sessionId] }),
+  })
+}
+
+export function useClearHistory() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch(`/api/sessions/${sessionId}/messages`, { method: 'DELETE' }),
+    onSuccess: (_, sessionId) => qc.invalidateQueries({ queryKey: ['session', sessionId] }),
+  })
+}

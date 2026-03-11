@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Bot, Send, Zap, Trash2, MessageSquare, ChevronRight } from 'lucide-react'
+import { Plus, Bot, Send, Zap, Trash2, MessageSquare, ChevronRight, RotateCcw } from 'lucide-react'
 import {
   Button, EmptyState, ConfirmDialog, Select
 } from '@/components'
-import { useGetSessions, useGetSession, useCreateSession, useSendMessage, useDeleteSession } from '@/api/sessions'
+import { useGetSessions, useGetSession, useCreateSession, useSendMessage, useDeleteSession, useDeleteMessage, useClearHistory } from '@/api/sessions'
 import { useGetProjects } from '@/api/projects'
 import { useGetWorkspaces } from '@/api/workspaces'
 import { API_BASE_URL, API_TOKEN } from '@/api/client'
@@ -15,12 +15,15 @@ export default function ChatPage() {
   const [showPlanModal, setShowPlanModal] = useState(false)
   const [pendingPlan, setPendingPlan] = useState<any>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const { data: sessions = [] } = useGetSessions()
   const { data: session } = useGetSession(selectedId ?? '')
   const sendMessage = useSendMessage(selectedId ?? '')
   const deleteSession = useDeleteSession()
+  const deleteMessage = useDeleteMessage()
+  const clearHistory = useClearHistory()
 
   // SSE for real-time updates
   useEffect(() => {
@@ -121,17 +124,26 @@ export default function ChatPage() {
                 <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full animate-pulse">Thinking...</span>
               )}
             </div>
-            <button
-              onClick={() => setDeleteConfirm(selectedId)}
-              className="text-gray-400 hover:text-red-500"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="text-gray-400 hover:text-amber-500"
+                title="Clear chat history (resets context)"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(selectedId)}
+                className="text-gray-400 hover:text-red-500"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-            {(session?.messages ?? []).map((msg: any) => {
+            {(session?.messages ?? []).map((msg: any, msgIndex: number) => {
               let displayContent = msg.content
               let structuredOut = null
               try {
@@ -140,13 +152,33 @@ export default function ChatPage() {
                 structuredOut = parsed.structured_output
               } catch {}
 
+              // Check if this is the last user message without a response
+              const messages = session?.messages ?? []
+              const isLastUserMsg = (
+                msg.role === 'user' &&
+                messages[messages.length - 1]?.id === msg.id
+              )
+              const hasResponse = messages.some(
+                (m: any, i: number) => i > msgIndex && m.role === 'assistant'
+              )
+              const isPending = isLastUserMsg && !hasResponse && session?.status === 'running'
+
               return (
                 <div
                   key={msg.id}
-                  className={`flex ${
+                  className={`flex group ${
                     msg.role === 'user' ? 'justify-end' : 'justify-start'
                   }`}
                 >
+                  {/* Delete button - visible on hover */}
+                  <button
+                    onClick={() => deleteMessage.mutate({ sessionId: selectedId!, messageId: msg.id })}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity self-center mx-2 text-gray-300 hover:text-red-400"
+                    title="Delete message"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+
                   <div className={`max-w-[80%] ${
                     msg.role === 'user'
                       ? 'bg-gray-900 text-white rounded-2xl rounded-br-sm px-4 py-2.5'
@@ -157,6 +189,11 @@ export default function ChatPage() {
                     }`}>
                       {displayContent}
                     </p>
+
+                    {/* Pending indicator */}
+                    {isPending && (
+                      <p className="text-xs mt-1 text-blue-300 animate-pulse">⏳ waiting for response...</p>
+                    )}
 
                     {/* Structured output card */}
                     {structuredOut && (
@@ -278,6 +315,20 @@ export default function ChatPage() {
           setDeleteConfirm(null)
         }}
         onCancel={() => setDeleteConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmClear}
+        title="Clear chat history?"
+        description="All messages will be deleted and the conversation context will be reset. The agent will not remember previous messages."
+        confirmLabel="Clear history"
+        variant="danger"
+        onConfirm={() => {
+          clearHistory.mutate(selectedId!)
+          setConfirmClear(false)
+        }}
+        onCancel={() => setConfirmClear(false)}
+        loading={clearHistory.isPending}
       />
     </div>
   )
