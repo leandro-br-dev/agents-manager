@@ -5,6 +5,7 @@ import { authenticateToken } from '../middleware/auth.js'
 import { db } from '../db/index.js'
 import { agentWorkspacePath, envAgentPath, slugify } from '../utils/paths.js'
 import { updateAgentSettings, rebuildAgentSettings } from '../utils/agentSettings.js'
+import { AGENT_TEMPLATES, renderTemplate } from '../utils/claudeMdTemplates.js'
 import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -148,6 +149,18 @@ function getIdParam(reqParams: any): string {
 }
 
 
+// GET /api/workspaces/templates — listar templates disponíveis
+router.get('/templates', authenticateToken, (_req, res) => {
+  return res.json({
+    data: AGENT_TEMPLATES.map(t => ({
+      id: t.id,
+      label: t.label,
+      description: t.description,
+    })),
+    error: null
+  })
+})
+
 // GET /api/workspaces — listar todos os projetos
 router.get('/', authenticateToken, (req, res) => {
   const all = listAllWorkspaces()
@@ -220,7 +233,7 @@ router.get('/:id', authenticateToken, (req, res) => {
 
 // POST /api/workspaces — criar novo workspace
 router.post('/', authenticateToken, (req, res) => {
-  const { name, project_path, anthropic_base_url = 'http://localhost:8083', project_id } = req.body
+  const { name, project_path, anthropic_base_url = 'http://localhost:8083', project_id, template_id } = req.body
 
   if (!name) {
     return res.status(400).json({ data: null, error: 'name is required' })
@@ -273,8 +286,28 @@ router.post('/', authenticateToken, (req, res) => {
     JSON.stringify(settings, null, 2)
   )
 
-  const claudeMd = `# Coder Agent — ${name}\n\nYou are implementing features for the ${project.name} project.\nThe project lives at \`${projectTarget}\`. All file operations target that directory.\n\n## Finishing checklist\n1. All tests pass\n2. Code runs without errors\n3. Changes committed\n`
-  fs.writeFileSync(path.join(coderPath, 'CLAUDE.md'), claudeMd)
+  // Gerar conteúdo do CLAUDE.md
+  let claudeMdContent: string
+  if (template_id) {
+    const template = AGENT_TEMPLATES.find(t => t.id === template_id)
+    if (template) {
+      claudeMdContent = renderTemplate(template, {
+        agentName: name,
+        projectName: project?.name ?? 'Unknown Project',
+      })
+    } else {
+      claudeMdContent = `# ${name}\n\nAgent for project: ${project?.name ?? ''}\n`
+    }
+  } else {
+    // Template genérico se nenhum selecionado
+    const generic = AGENT_TEMPLATES.find(t => t.id === 'generic')!
+    claudeMdContent = renderTemplate(generic, {
+      agentName: name,
+      projectName: project?.name ?? 'Unknown Project',
+    })
+  }
+
+  fs.writeFileSync(path.join(coderPath, 'CLAUDE.md'), claudeMdContent)
 
   // Criar vínculo com o projeto
   db.prepare(

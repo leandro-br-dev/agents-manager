@@ -49,9 +49,16 @@ export function useGetWorkspace(id: string) {
 export function useCreateWorkspace() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { name: string; project_path?: string; anthropic_base_url?: string; project_id?: string }) =>
+    mutationFn: (data: { name: string; project_path?: string; anthropic_base_url?: string; project_id?: string; template_id?: string }) =>
       apiClient.post<{ id: string; path: string }>('/api/workspaces', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: workspaceKeys.list() }),
+  })
+}
+
+export function useGetAgentTemplates() {
+  return useQuery({
+    queryKey: ['agent-templates'],
+    queryFn: () => apiClient.get<Array<{ id: string; label: string; description: string }>>('/api/workspaces/templates'),
   })
 }
 

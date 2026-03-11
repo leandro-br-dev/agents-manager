@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, type Workspace } from '../api/workspaces'
+import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, useGetAgentTemplates, type Workspace } from '../api/workspaces'
 import { useGetProjects, useGetAllEnvironments } from '../api/projects'
 import { useState } from 'react'
 import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil, Link2, X } from 'lucide-react'
@@ -19,10 +19,12 @@ export default function AgentsPage() {
 function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) => void }) {
   const { data: workspaces, isLoading, error } = useGetWorkspaces()
   const { data: projects } = useGetProjects()
+  const { data: templates = [] } = useGetAgentTemplates()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newBaseUrl, setNewBaseUrl] = useState('')
   const [newProjectId, setNewProjectId] = useState('')
+  const [templateId, setTemplateId] = useState('generic')
   const createWorkspace = useCreateWorkspace()
 
   const canCreate = newName.trim().length > 0 && newProjectId.length > 0
@@ -35,13 +37,15 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
       {
         name: newName,
         anthropic_base_url: newBaseUrl || undefined,
-        project_id: newProjectId
+        project_id: newProjectId,
+        template_id: templateId,
       },
       {
         onSuccess: () => {
           setNewName('')
           setNewBaseUrl('')
           setNewProjectId('')
+          setTemplateId('generic')
           setShowNewForm(false)
         },
       }
@@ -105,6 +109,23 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
                   </p>
                 )}
               </div>
+              <Select
+                label="CLAUDE.md Template"
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                className="col-span-2"
+              >
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>{t.label} — {t.description}</option>
+                ))}
+              </Select>
+              {templateId && templates.find(t => t.id === templateId) && (
+                <div className="col-span-2 rounded bg-gray-50 border border-gray-200 px-3 py-2">
+                  <p className="text-xs text-gray-500 font-medium">
+                    {templates.find(t => t.id === templateId)?.description}
+                  </p>
+                </div>
+              )}
               <Input
                 label="Anthropic Base URL"
                 value={newBaseUrl}
