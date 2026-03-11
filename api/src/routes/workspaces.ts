@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { authenticateToken } from '../middleware/auth.js'
 import { db } from '../db/index.js'
+import { agentWorkspacePath, envAgentPath, slugify } from '../utils/paths.js'
 
 const router = Router()
 
@@ -21,6 +22,7 @@ interface WorkspaceInfo {
   hasSettings: boolean
   hasClaude: boolean
   baseUrl: string | null
+  type: 'agent' | 'env-agent' | 'legacy'
 }
 
 function readJsonSafe(filePath: string): any {
@@ -35,24 +37,86 @@ function listAllWorkspaces(): WorkspaceInfo[] {
   if (!fs.existsSync(AGENT_CLIENT_PATH)) {
     return []
   }
-  const entries = fs.readdirSync(AGENT_CLIENT_PATH, { withFileTypes: true })
-  return entries
-    .filter(e => e.isDirectory())
-    .map(e => {
-      const coderPath = getWorkspacePath(e.name)
-      const settingsPath = path.join(coderPath, '.claude', 'settings.local.json')
-      const claudeMdPath = path.join(coderPath, 'CLAUDE.md')
+
+  const results: WorkspaceInfo[] = []
+
+  // Read all project directories
+  const projectDirs = fs.readdirSync(AGENT_CLIENT_PATH, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+
+  for (const projectDir of projectDirs) {
+    const projectPath = path.join(AGENT_CLIENT_PATH, projectDir.name)
+    const agentsDirPath = path.join(projectPath, 'agents')
+
+    // New structure: {project}/agents/{agent-name}/
+    if (fs.existsSync(agentsDirPath)) {
+      const agentDirs = fs.readdirSync(agentsDirPath, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+
+      for (const agentDir of agentDirs) {
+        const fullPath = path.join(agentsDirPath, agentDir.name)
+        const settingsPath = path.join(fullPath, '.claude', 'settings.local.json')
+        const claudeMdPath = path.join(fullPath, 'CLAUDE.md')
+        const settings = readJsonSafe(settingsPath)
+
+        results.push({
+          id: Buffer.from(fullPath).toString('base64url'),
+          name: agentDir.name,
+          path: fullPath,
+          exists: true,
+          hasSettings: fs.existsSync(settingsPath),
+          hasClaude: fs.existsSync(claudeMdPath),
+          baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
+          type: 'agent'
+        })
+      }
+    }
+
+    // Environment agents: {project}/{env}/agent-coder/ (except 'agents' folder)
+    const envDirs = fs.readdirSync(projectPath, { withFileTypes: true })
+      .filter(d => d.isDirectory() && d.name !== 'agents')
+
+    for (const envDir of envDirs) {
+      const agentCoderPath = path.join(projectPath, envDir.name, 'agent-coder')
+      if (fs.existsSync(agentCoderPath)) {
+        const settingsPath = path.join(agentCoderPath, '.claude', 'settings.local.json')
+        const claudeMdPath = path.join(agentCoderPath, 'CLAUDE.md')
+        const settings = readJsonSafe(settingsPath)
+
+        results.push({
+          id: Buffer.from(agentCoderPath).toString('base64url'),
+          name: `${projectDir.name}/${envDir.name}`,
+          path: agentCoderPath,
+          exists: true,
+          hasSettings: fs.existsSync(settingsPath),
+          hasClaude: fs.existsSync(claudeMdPath),
+          baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
+          type: 'env-agent'
+        })
+      }
+    }
+
+    // Legacy structure: {project}/agent-coder/ (for backward compatibility)
+    const legacyAgentCoderPath = path.join(projectPath, 'agent-coder')
+    if (fs.existsSync(legacyAgentCoderPath)) {
+      const settingsPath = path.join(legacyAgentCoderPath, '.claude', 'settings.local.json')
+      const claudeMdPath = path.join(legacyAgentCoderPath, 'CLAUDE.md')
       const settings = readJsonSafe(settingsPath)
-      return {
-        id: e.name,
-        name: e.name,
-        path: coderPath,
-        exists: fs.existsSync(coderPath),
+
+      results.push({
+        id: Buffer.from(legacyAgentCoderPath).toString('base64url'),
+        name: projectDir.name,
+        path: legacyAgentCoderPath,
+        exists: true,
         hasSettings: fs.existsSync(settingsPath),
         hasClaude: fs.existsSync(claudeMdPath),
         baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
-      }
-    })
+        type: 'legacy'
+      })
+    }
+  }
+
+  return results
 }
 
 function readFileSafe(filePath: string): string | null {
@@ -142,9 +206,27 @@ router.get('/:id', authenticateToken, (req, res) => {
 // POST /api/workspaces — criar novo workspace
 router.post('/', authenticateToken, (req, res) => {
   const { name, project_path, anthropic_base_url = 'http://localhost:8083', project_id } = req.body
-  if (!name) return res.status(400).json({ data: null, error: 'name is required' })
 
-  const coderPath = getWorkspacePath(name)
+  if (!name) {
+    return res.status(400).json({ data: null, error: 'name is required' })
+  }
+
+  if (!project_id) {
+    return res.status(400).json({
+      data: null,
+      error: 'project_id is required to create an agent. Agents must belong to a project.'
+    })
+  }
+
+  // Buscar o projeto para obter o slug
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(project_id) as any
+  if (!project) {
+    return res.status(404).json({ data: null, error: 'Project not found' })
+  }
+
+  // Gerar o path usando a nova estrutura
+  const coderPath = agentWorkspacePath(AGENT_CLIENT_PATH, project.name, name)
+
   if (fs.existsSync(coderPath)) {
     return res.status(409).json({ data: null, error: 'Workspace already exists' })
   }
@@ -153,7 +235,7 @@ router.post('/', authenticateToken, (req, res) => {
   fs.mkdirSync(path.join(claudeDir, 'skills'), { recursive: true })
   fs.mkdirSync(path.join(claudeDir, 'agents'), { recursive: true })
 
-  const projectTarget = project_path || `/root/projects/${name}`
+  const projectTarget = project_path || `/root/projects/${project.name}`
   if (!fs.existsSync(projectTarget)) {
     fs.mkdirSync(projectTarget, { recursive: true })
   }
@@ -176,17 +258,23 @@ router.post('/', authenticateToken, (req, res) => {
     JSON.stringify(settings, null, 2)
   )
 
-  const claudeMd = `# Coder Agent — ${name}\n\nYou are implementing features for the ${name} project.\nThe project lives at \`${projectTarget}\`. All file operations target that directory.\n\n## Finishing checklist\n1. All tests pass\n2. Code runs without errors\n3. Changes committed\n`
+  const claudeMd = `# Coder Agent — ${name}\n\nYou are implementing features for the ${project.name} project.\nThe project lives at \`${projectTarget}\`. All file operations target that directory.\n\n## Finishing checklist\n1. All tests pass\n2. Code runs without errors\n3. Changes committed\n`
   fs.writeFileSync(path.join(coderPath, 'CLAUDE.md'), claudeMd)
 
-  // Se project_id fornecido, criar vínculo
-  if (project_id) {
-    db.prepare(
-      'INSERT OR IGNORE INTO project_agents (project_id, workspace_path) VALUES (?, ?)'
-    ).run(project_id, coderPath)
-  }
+  // Criar vínculo com o projeto
+  db.prepare(
+    'INSERT OR IGNORE INTO project_agents (project_id, workspace_path) VALUES (?, ?)'
+  ).run(project_id, coderPath)
 
-  return res.status(201).json({ data: { id: name, path: coderPath }, error: null })
+  return res.status(201).json({
+    data: {
+      id: Buffer.from(coderPath).toString('base64url'),
+      path: coderPath,
+      name: name,
+      project_id: project_id
+    },
+    error: null
+  })
 })
 
 // PUT /api/workspaces/:id/claude-md — salvar CLAUDE.md

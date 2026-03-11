@@ -4,6 +4,7 @@ import { db } from '../db/index.js'
 import { authenticateToken } from '../middleware/auth.js'
 import fs from 'fs'
 import path from 'path'
+import { envAgentPath } from '../utils/paths.js'
 
 const router = Router()
 
@@ -56,13 +57,9 @@ router.post('/:id/environments', authenticateToken, (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
   if (!project) return res.status(404).json({ data: null, error: 'Project not found' })
 
-  // Generate slug for the workspace path
-  const projectSlug = project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  const envSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-  const agentsManagerRoot = process.env.AGENT_CLIENT_PATH
-    ? path.dirname(process.env.AGENT_CLIENT_PATH)
-    : '/root/projects/agents-manager/projects'
-  const agent_workspace = path.join(agentsManagerRoot, projectSlug, envSlug, 'agent-coder')
+  // Use the new utility function for environment agent paths
+  const AGENT_CLIENT_PATH = process.env.AGENT_CLIENT_PATH || '/root/projects/agents-manager/projects'
+  const agent_workspace = envAgentPath(AGENT_CLIENT_PATH, project.name, name)
 
   // Create workspace directory structure
   const claudeDir = path.join(agent_workspace, '.claude')
