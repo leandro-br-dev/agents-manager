@@ -262,7 +262,10 @@ async def process_chat_session(session: dict, client: object) -> None:
 
     session_id = session['id']
     workspace_path = session['workspace_path']
-    cwd = session.get('cwd') or workspace_path
+
+    # Use env_project_path if available (from environment), otherwise fall back to workspace_path
+    cwd = session.get('env_project_path') or session.get('cwd') or workspace_path
+
     sdk_session_id = session.get('sdk_session_id')
     user_message = session.get('last_user_message', '')
 
@@ -287,6 +290,13 @@ async def process_chat_session(session: dict, client: object) -> None:
         # We don't need to stream logs separately for chat
         # The full response is saved via on_response
         pass
+
+    # Check if user message exists
+    if not user_message:
+        logger.warning(f'Session {session_id[:8]} has no user message, skipping')
+        # Reset to idle to avoid getting stuck
+        await on_response('No message received.', None)
+        return
 
     try:
         new_sdk_session_id = await run_chat_turn(

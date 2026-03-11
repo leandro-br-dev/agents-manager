@@ -31,10 +31,13 @@ router.post('/', authenticateToken, (req, res) => {
 // GET /api/sessions/pending — daemon polling (sessões running sem sdk_session_id, ou running com)
 router.get('/pending', authenticateToken, (_req, res) => {
   const sessions = db.prepare(
-    "SELECT s.*, m.content as last_user_message FROM chat_sessions s " +
+    "SELECT s.*, m.content as last_user_message, e.project_path as env_project_path " +
+    "FROM chat_sessions s " +
     "JOIN chat_messages m ON m.id = (" +
     "  SELECT id FROM chat_messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at DESC LIMIT 1" +
-    ") WHERE s.status = 'running' LIMIT 5"
+    ") " +
+    "LEFT JOIN environments e ON e.id = s.environment_id " +
+    "WHERE s.status = 'running' LIMIT 5"
   ).all()
   return res.json({ data: sessions, error: null })
 })
