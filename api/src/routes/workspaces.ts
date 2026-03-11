@@ -205,6 +205,7 @@ router.get('/:id', authenticateToken, (req, res) => {
   return res.json({
     data: {
       id: id,
+      name: workspace.name,
       path: coderPath,
       exists: fs.existsSync(coderPath),
       claudeMd: readFileSafe(claudeMdPath),

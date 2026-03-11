@@ -13,6 +13,7 @@ export type Workspace = {
 
 export type WorkspaceDetail = {
   id: string
+  name: string
   path: string
   claudeMd: string | null
   settings: any

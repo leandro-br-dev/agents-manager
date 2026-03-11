@@ -255,21 +255,26 @@ function WorkspaceDetail({ workspaceId, onClose }: { workspaceId: string; onClos
   const { data: workspace, isLoading, error } = useGetWorkspace(workspaceId)
   const [activeTab, setActiveTab] = useState<'claude' | 'settings' | 'skills' | 'agents' | 'environments'>('claude')
   const [editingName, setEditingName] = useState(false)
-  const [newName, setNewName] = useState(workspaceId)
+  const [newName, setNewName] = useState('')
   const renameAgent = useRenameAgent()
+
+  // Update newName when workspace loads
+  if (workspace && newName !== workspace.name) {
+    setNewName(workspace.name)
+  }
 
   if (isLoading) return <div className="p-8">Loading agent...</div>
   if (error) return <div className="p-8 text-red-600">Error loading agent</div>
   if (!workspace) return null
 
   const handleRename = () => {
-    if (newName && newName !== workspaceId) {
+    if (newName && workspace && newName !== workspace.name) {
       renameAgent.mutate(
         { id: workspaceId, name: newName },
         {
           onSuccess: () => {
             setEditingName(false)
-            // Redirect to new name
+            // Redirect to new ID (the rename endpoint returns the new base64 ID)
             window.location.href = `/agents?workspace=${newName}`
           },
         }
@@ -306,7 +311,7 @@ function WorkspaceDetail({ workspaceId, onClose }: { workspaceId: string; onClos
                 variant="ghost"
                 onClick={() => {
                   setEditingName(false)
-                  setNewName(workspaceId)
+                  setNewName(workspace?.name || '')
                 }}
                 size="sm"
               >
@@ -315,7 +320,7 @@ function WorkspaceDetail({ workspaceId, onClose }: { workspaceId: string; onClos
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold text-gray-900">{workspaceId}</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">{workspace.name}</h1>
               <Button
                 variant="ghost"
                 onClick={() => setEditingName(true)}
