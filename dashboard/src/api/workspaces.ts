@@ -25,10 +25,15 @@ export const workspaceKeys = {
   detail: (id: string) => ['workspaces', id] as const,
 }
 
-export function useGetWorkspaces() {
+export function useGetWorkspaces(params?: { project_id?: string }) {
   return useQuery({
-    queryKey: workspaceKeys.list(),
-    queryFn: () => apiClient.get<Workspace[]>('/api/workspaces'),
+    queryKey: ['workspaces', params],
+    queryFn: () => {
+      const queryString = params?.project_id
+        ? `?project_id=${encodeURIComponent(params.project_id)}`
+        : '';
+      return apiClient.get<Workspace[]>(`/api/workspaces${queryString}`);
+    },
   })
 }
 

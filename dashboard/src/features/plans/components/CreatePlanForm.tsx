@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { useCreatePlan, type Task } from '@/api/plans';
 import { useGetWorkspaces } from '@/api/workspaces';
-import { useGetAllEnvironments } from '@/api/projects';
+import { useGetProjects } from '@/api/projects';
 import { cn } from '@/lib/utils';
 
 interface TaskForm {
@@ -13,6 +13,9 @@ interface TaskForm {
   workspace: string;
   env_context?: string;
   selectedEnvId?: string;
+  permission_mode?: string;
+  depends_on?: string[];
+  tools?: string[];
 }
 
 interface FormErrors {
@@ -23,8 +26,17 @@ interface FormErrors {
 export function CreatePlanForm() {
   const navigate = useNavigate();
   const createMutation = useCreatePlan();
-  const { data: workspaces = [] } = useGetWorkspaces();
-  const { data: environments = [] } = useGetAllEnvironments();
+  const { data: projects = [] } = useGetProjects();
+  const [projectId, setProjectId] = useState('');
+
+  // Workspaces filtered by selected project
+  const { data: workspaces = [] } = useGetWorkspaces(
+    projectId ? { project_id: projectId } : undefined
+  );
+
+  // Environments filtered by selected project
+  const selectedProject = projects.find(p => p.id === projectId);
+  const environments = selectedProject?.environments ?? [];
 
   const [planName, setPlanName] = useState('');
   const [tasks, setTasks] = useState<TaskForm[]>([
@@ -34,9 +46,37 @@ export function CreatePlanForm() {
       prompt: '',
       cwd: '',
       workspace: '',
+      permission_mode: 'allow',
+      depends_on: [],
+      tools: [],
     },
   ]);
   const [errors, setErrors] = useState<FormErrors>({});
+
+  // Handle project change - reset agent and environment for all tasks
+  const handleProjectChange = (newProjectId: string) => {
+    setProjectId(newProjectId);
+    setTasks(tasks.map(t => ({
+      ...t,
+      workspace: '',
+      selectedEnvId: '',
+      cwd: '',
+      env_context: '',
+    })));
+  };
+
+  // Handle environment selection for a task
+  const handleEnvSelect = (taskIdx: number, envId: string) => {
+    const env = environments.find(e => e.id === envId);
+    setTasks(tasks.map((t, i) => i !== taskIdx ? t : {
+      ...t,
+      selectedEnvId: envId,
+      cwd: env?.project_path ?? t.cwd,
+      env_context: env ? `${env.name} (${env.type})\nProject path: ${env.project_path}` : '',
+      // Auto-fill workspace with agent_workspace from environment if not set
+      workspace: env?.agent_workspace ?? t.workspace,
+    }));
+  };
 
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
@@ -73,10 +113,17 @@ export function CreatePlanForm() {
       cwd: task.cwd,
       workspace: task.workspace,
       env_context: task.env_context,
+      permission_mode: task.permission_mode,
+      depends_on: task.depends_on,
+      tools: task.tools,
     }));
 
     createMutation.mutate(
-      { name: planName, tasks: tasksToCreate },
+      {
+        name: planName,
+        project_id: projectId || undefined,
+        tasks: tasksToCreate
+      },
       {
         onSuccess: (data) => {
           navigate(`/plans/${data.id}`);
@@ -94,6 +141,9 @@ export function CreatePlanForm() {
         prompt: '',
         cwd: '',
         workspace: '',
+        permission_mode: 'allow',
+        depends_on: [],
+        tools: [],
       },
     ]);
   };
@@ -104,9 +154,9 @@ export function CreatePlanForm() {
     }
   };
 
-  const updateTask = (index: number, field: keyof TaskForm, value: string) => {
+  const updateTask = (index: number, field: keyof TaskForm, value: string | string[]) => {
     const updatedTasks = [...tasks];
-    updatedTasks[index][field] = value;
+    (updatedTasks[index] as any)[field] = value;
     setTasks(updatedTasks);
   };
 
@@ -123,6 +173,33 @@ export function CreatePlanForm() {
           <h1 className="text-2xl font-bold text-gray-900 mb-6">Create New Plan</h1>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Project Selection */}
+            <div>
+              <label htmlFor="project" className="block text-sm font-medium text-gray-700">
+                Project *
+              </label>
+              <select
+                id="project"
+                value={projectId}
+                onChange={(e) => handleProjectChange(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                required
+              >
+                <option value="">Select a project...</option>
+                {projects.map(project => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              {projects.length === 0 && (
+                <p className="mt-1 text-sm text-amber-600">
+                  No projects available.{' '}
+                  <Link to="/projects" className="underline">Create a project first</Link>
+                </p>
+              )}
+            </div>
+
             {/* Plan Name */}
             <div>
               <label htmlFor="planName" className="block text-sm font-medium text-gray-700">
@@ -181,27 +258,11 @@ export function CreatePlanForm() {
                       <p className="text-sm text-red-600">{errors.tasks[index]}</p>
                     )}
 
-                    <div>
-                      <label
-                        htmlFor={`task-name-${index}`}
-                        className="block text-sm font-medium text-gray-700"
-                      >
-                        Task Name *
-                      </label>
-                      <input
-                        type="text"
-                        id={`task-name-${index}`}
-                        value={task.name}
-                        onChange={(e) => updateTask(index, 'name', e.target.value)}
-                        className={cn(
-                          'mt-1 block w-full rounded-md border-gray-300 shadow-sm',
-                          'focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm',
-                          'px-3 py-2 border',
-                          errors.tasks?.[index] && 'border-red-500'
-                        )}
-                        placeholder="Build frontend components"
-                      />
-                    </div>
+                    {!projectId && (
+                      <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+                        Select a project above to filter available agents and environments
+                      </div>
+                    )}
 
                     <div>
                       <label
@@ -225,15 +286,14 @@ export function CreatePlanForm() {
                       />
                     </div>
 
-                    <div className="space-y-3">
-                      {/* Agent Workspace - QUEM executa */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Agent Workspace */}
                       <div>
                         <label
                           htmlFor={`task-workspace-${index}`}
                           className="block text-sm font-medium text-gray-700 mb-1"
                         >
-                          Agent Workspace <span className="text-red-500">*</span>
-                          <span className="text-xs text-gray-400 ml-1">— pasta com CLAUDE.md e .claude/</span>
+                          Agent <span className="text-red-500">*</span>
                         </label>
                         <select
                           id={`task-workspace-${index}`}
@@ -256,113 +316,80 @@ export function CreatePlanForm() {
                             errors.tasks?.[index] && 'border-red-500'
                           )}
                           required
+                          disabled={!projectId}
                         >
-                          <option value="">Select agent workspace...</option>
+                          <option value="">Select agent...</option>
                           {workspaces.map(ws => (
                             <option key={ws.id} value={ws.path}>
                               {ws.name}
                             </option>
                           ))}
                         </select>
-                        {workspaces.length === 0 && (
+                        {!projectId && workspaces.length === 0 && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Select a project first
+                          </p>
+                        )}
+                        {projectId && workspaces.length === 0 && (
                           <p className="text-xs text-amber-600 mt-1">
-                            No workspaces registered.{' '}
+                            No agents registered for this project.{' '}
                             <Link to="/agents" className="underline">Create workspace</Link>
                           </p>
                         )}
                       </div>
 
-                      {/* Environment - ONDE executa */}
+                      {/* Environment */}
                       <div>
                         <label
                           htmlFor={`task-environment-${index}`}
                           className="block text-sm font-medium text-gray-700 mb-1"
                         >
                           Environment
-                          <span className="text-xs text-gray-400 ml-1">— defines where files will be created</span>
                         </label>
                         <select
                           id={`task-environment-${index}`}
                           value={task.selectedEnvId ?? ''}
-                          onChange={(e) => {
-                            const envId = e.target.value
-                            updateTask(index, 'selectedEnvId', envId)
-
-                            if (envId) {
-                              const env = environments.find(e => e.id === envId)
-                              if (env) {
-                                // Update cwd with project_path from environment
-                                updateTask(index, 'cwd', env.project_path)
-                                // Set env_context for prompt injection
-                                updateTask(index, 'env_context', `${env.name} (${env.type})\nProject path: ${env.project_path}`)
-                                // If workspace not selected yet, use agent_workspace
-                                if (!task.workspace) {
-                                  updateTask(index, 'workspace', env.agent_workspace)
-                                }
-                              }
-                            } else {
-                              // Clear environment, reset to workspace project root
-                              const ws = workspaces.find(w => w.path === task.workspace)
-                              if (ws) {
-                                const projectRoot = ws.path.split('/agent-coder')[0]
-                                updateTask(index, 'cwd', projectRoot)
-                              } else {
-                                updateTask(index, 'cwd', task.workspace)
-                              }
-                              updateTask(index, 'env_context', '')
-                            }
-                          }}
+                          onChange={(e) => handleEnvSelect(index, e.target.value)}
                           className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2 border"
+                          disabled={!projectId}
                         >
-                          <option value="">Same as agent workspace (default)</option>
+                          <option value="">Same as agent (default)</option>
                           {environments.map(env => (
                             <option key={env.id} value={env.id}>
-                              {env.project_name} — {env.name} ({env.type})
+                              {env.name} ({env.type})
                             </option>
                           ))}
                         </select>
-                        {task.selectedEnvId && (() => {
-                          const env = environments.find(e => e.id === task.selectedEnvId)
-                          if (!env) return null
-                          return (
-                            <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md text-xs space-y-1">
-                              <div className="flex gap-2">
-                                <span className="text-blue-500 font-medium w-28">Working dir:</span>
-                                <code className="text-blue-700">{env.project_path}</code>
-                              </div>
-                              <div className="flex gap-2">
-                                <span className="text-blue-500 font-medium w-28">Agent config:</span>
-                                <code className="text-blue-700 break-all">{env.agent_workspace}</code>
-                              </div>
-                            </div>
-                          )
-                        })()}
-                        {environments.length === 0 && (
+                        {!projectId && environments.length === 0 && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Select a project first
+                          </p>
+                        )}
+                        {projectId && environments.length === 0 && (
                           <p className="text-xs text-amber-600 mt-1">
-                            No environments registered.{' '}
+                            No environments for this project.{' '}
                             <Link to="/projects" className="underline">Manage projects</Link>
                           </p>
                         )}
                       </div>
+                    </div>
 
-                      {/* Working directory - read-only, derived from environment or workspace */}
-                      <div>
-                        <label
-                          htmlFor={`task-cwd-${index}`}
-                          className="block text-sm font-medium text-gray-400 mb-1 text-xs"
-                        >
-                          Working directory (cwd)
-                          <span className="ml-1 text-gray-300">— where files will be created</span>
-                        </label>
-                        <input
-                          type="text"
-                          id={`task-cwd-${index}`}
-                          value={task.cwd}
-                          readOnly
-                          className="block w-full rounded-md border-gray-300 shadow-sm px-3 py-2 border bg-gray-50 text-gray-500 cursor-default sm:text-sm"
-                          placeholder="Derived from environment or agent workspace"
-                        />
-                      </div>
+                    {/* Working directory - read-only, derived from environment or workspace */}
+                    <div>
+                      <label
+                        htmlFor={`task-cwd-${index}`}
+                        className="block text-sm font-medium text-gray-400 mb-1 text-xs"
+                      >
+                        Working directory (auto)
+                      </label>
+                      <input
+                        type="text"
+                        id={`task-cwd-${index}`}
+                        value={task.cwd}
+                        readOnly
+                        className="block w-full rounded-md border-gray-300 shadow-sm px-3 py-2 border bg-gray-50 text-gray-500 cursor-default sm:text-sm"
+                        placeholder="Derived from environment or agent workspace"
+                      />
                     </div>
                   </div>
                 ))}
