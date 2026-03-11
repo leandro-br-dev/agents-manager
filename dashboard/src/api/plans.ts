@@ -18,6 +18,7 @@ export interface Plan {
   status: PlanStatus;
   tasks: Task[];
   client_id?: string;
+  project_id?: string;
   created_at: string;
   started_at?: string;
   completed_at?: string;
@@ -36,12 +37,17 @@ export interface PlanLog {
 export interface CreatePlanRequest {
   name: string;
   tasks: Omit<Task, 'id'>[];
+  project_id?: string;
 }
 
-export const useGetPlans = () => {
+export const useGetPlans = (filters?: { project_id?: string }) => {
+  const queryString = filters?.project_id
+    ? `?project_id=${encodeURIComponent(filters.project_id)}`
+    : '';
+
   return useQuery({
-    queryKey: ['plans'],
-    queryFn: () => apiClient.get<Plan[]>('/api/plans'),
+    queryKey: ['plans', filters],
+    queryFn: () => apiClient.get<Plan[]>(`/api/plans${queryString}`),
     refetchInterval: (query) => {
       const plans = query.state.data as Plan[] | undefined;
       // Poll every 2s if there are active plans, every 30s otherwise

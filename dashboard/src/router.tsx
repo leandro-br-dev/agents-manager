@@ -1,6 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom'
 import Layout from './components/Layout'
-import { PlansPage } from './pages/PlansPage'
 import { PlanDetailPage } from './pages/PlanDetailPage'
 import { CreatePlanPage } from './pages/CreatePlanPage'
 import WorkflowsPage from './pages/WorkflowsPage'
@@ -16,7 +15,11 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <PlansPage />,
+        element: <WorkflowsPage />,
+      },
+      {
+        path: 'workflows',
+        element: <WorkflowsPage />,
       },
       {
         path: 'plans/:id',
@@ -25,10 +28,6 @@ export const router = createBrowserRouter([
       {
         path: 'plans/new',
         element: <CreatePlanPage />,
-      },
-      {
-        path: 'workflows',
-        element: <WorkflowsPage />,
       },
       {
         path: 'agents',

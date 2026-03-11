@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Settings, Users, Workflow, AlertCircle, FolderOpen, FileText } from 'lucide-react'
+import { Settings, Users, Workflow, AlertCircle, FolderOpen } from 'lucide-react'
 import { useGetPendingApprovals } from '@/api/approvals'
 
 export default function Layout() {
@@ -14,8 +14,7 @@ export default function Layout() {
           <h1 className="text-xl font-bold">Agents Manager</h1>
         </div>
         <nav className="mt-6">
-          <NavItem icon={<FileText size={20} />} label="Plans" href="/" isActive={location.pathname === '/'} />
-          <NavItem icon={<Workflow size={20} />} label="Workflows" href="/workflows" isActive={location.pathname === '/workflows'} />
+          <NavItem icon={<Workflow size={20} />} label="Workflows" href="/" isActive={location.pathname === '/' || location.pathname === '/workflows'} />
           <NavItem icon={<FolderOpen size={20} />} label="Projects" href="/projects" isActive={location.pathname === '/projects'} />
           <NavItem icon={<Users size={20} />} label="Agents" href="/agents" isActive={location.pathname === '/agents'} />
           <NavItem
