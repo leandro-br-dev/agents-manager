@@ -28,6 +28,17 @@ router.post('/', authenticateToken, (req, res) => {
   return res.status(201).json({ data: { id, name, workspace_path }, error: null })
 })
 
+// GET /api/sessions/pending — daemon polling (sessões running sem sdk_session_id, ou running com)
+router.get('/pending', authenticateToken, (_req, res) => {
+  const sessions = db.prepare(
+    "SELECT s.*, m.content as last_user_message FROM chat_sessions s " +
+    "JOIN chat_messages m ON m.id = (" +
+    "  SELECT id FROM chat_messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at DESC LIMIT 1" +
+    ") WHERE s.status = 'running' LIMIT 5"
+  ).all()
+  return res.json({ data: sessions, error: null })
+})
+
 // GET /api/sessions/:id — detalhes + mensagens
 router.get('/:id', authenticateToken, (req, res) => {
   const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(req.params.id)
@@ -137,17 +148,6 @@ router.get('/:id/stream', (req, res) => {
   }, 500)
 
   req.on('close', () => clearInterval(interval))
-})
-
-// GET /api/sessions/pending — daemon polling (sessões running sem sdk_session_id, ou running com)
-router.get('/pending', authenticateToken, (_req, res) => {
-  const sessions = db.prepare(
-    "SELECT s.*, m.content as last_user_message FROM chat_sessions s " +
-    "JOIN chat_messages m ON m.id = (" +
-    "  SELECT id FROM chat_messages WHERE session_id = s.id AND role = 'user' ORDER BY created_at DESC LIMIT 1" +
-    ") WHERE s.status = 'running' LIMIT 5"
-  ).all()
-  return res.json({ data: sessions, error: null })
 })
 
 export default router
