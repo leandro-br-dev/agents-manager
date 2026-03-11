@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
 import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, type Workspace } from '../api/workspaces'
+import { useGetProjects } from '../api/projects'
 import { useState } from 'react'
 import { Trash2, Plus, Check, X, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil } from 'lucide-react'
 
@@ -16,21 +17,29 @@ export default function AgentsPage() {
 
 function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) => void }) {
   const { data: workspaces, isLoading, error } = useGetWorkspaces()
+  const { data: projects } = useGetProjects()
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newPath, setNewPath] = useState('')
   const [newBaseUrl, setNewBaseUrl] = useState('')
+  const [newProjectId, setNewProjectId] = useState('')
   const createWorkspace = useCreateWorkspace()
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     createWorkspace.mutate(
-      { name: newName, project_path: newPath || undefined, anthropic_base_url: newBaseUrl || undefined },
+      {
+        name: newName,
+        project_path: newPath || undefined,
+        anthropic_base_url: newBaseUrl || undefined,
+        project_id: newProjectId || undefined
+      },
       {
         onSuccess: () => {
           setNewName('')
           setNewPath('')
           setNewBaseUrl('')
+          setNewProjectId('')
           setShowNewForm(false)
         },
       }
@@ -55,7 +64,7 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
 
       {showNewForm && (
         <form onSubmit={handleCreate} className="mb-6 p-4 bg-white rounded-lg shadow border border-gray-200">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
               <input
@@ -65,6 +74,19 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Project</label>
+              <select
+                value={newProjectId}
+                onChange={(e) => setNewProjectId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">No project (standalone agent)</option>
+                {projects?.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Project Path</label>

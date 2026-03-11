@@ -1,14 +1,18 @@
 import { useState } from 'react'
-import { useGetProjects, useCreateProject, useDeleteProject, useCreateEnvironment, useUpdateEnvironment, useDeleteEnvironment, type Environment } from '@/api/projects'
-import { FolderOpen, Plus, Trash2, Edit2, ChevronDown, ChevronUp } from 'lucide-react'
+import { useGetProjects, useCreateProject, useDeleteProject, useCreateEnvironment, useUpdateEnvironment, useDeleteEnvironment, useLinkAgent, useUnlinkAgent, type Environment } from '@/api/projects'
+import { useGetWorkspaces } from '@/api/workspaces'
+import { FolderOpen, Plus, Trash2, Edit2, ChevronDown, ChevronUp, Link2, X } from 'lucide-react'
 
 export default function ProjectsPage() {
   const { data: projects, isLoading, error } = useGetProjects()
+  const { data: allWorkspaces } = useGetWorkspaces()
   const createProjectMutation = useCreateProject()
   const deleteProjectMutation = useDeleteProject()
   const createEnvironmentMutation = useCreateEnvironment()
   const updateEnvironmentMutation = useUpdateEnvironment()
   const deleteEnvironmentMutation = useDeleteEnvironment()
+  const linkAgentMutation = useLinkAgent()
+  const unlinkAgentMutation = useUnlinkAgent()
 
   const [showNewProjectForm, setShowNewProjectForm] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
@@ -16,6 +20,8 @@ export default function ProjectsPage() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
   const [showEnvForm, setShowEnvForm] = useState<Set<string>>(new Set())
   const [editingEnv, setEditingEnv] = useState<{ projectId: string; envId: string } | null>(null)
+  const [linkingAgent, setLinkingAgent] = useState<string | null>(null)
+  const [selectedLinkPath, setSelectedLinkPath] = useState('')
 
   // New environment form state
   const [newEnvData, setNewEnvData] = useState<Partial<Environment>>({
@@ -165,6 +171,32 @@ export default function ProjectsPage() {
     setEditEnvData({ ...env })
   }
 
+  const handleLinkAgent = async () => {
+    if (!linkingAgent || !selectedLinkPath) return
+
+    try {
+      await linkAgentMutation.mutateAsync({
+        projectId: linkingAgent,
+        workspace_path: selectedLinkPath
+      })
+      setLinkingAgent(null)
+      setSelectedLinkPath('')
+    } catch (error) {
+      alert(`Failed to link agent: ${(error as Error).message}`)
+    }
+  }
+
+  const handleUnlinkAgent = async (projectId: string, workspacePath: string) => {
+    try {
+      await unlinkAgentMutation.mutateAsync({
+        projectId,
+        workspace_path: workspacePath
+      })
+    } catch (error) {
+      alert(`Failed to unlink agent: ${(error as Error).message}`)
+    }
+  }
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
@@ -280,26 +312,28 @@ export default function ProjectsPage() {
                 </div>
               </div>
 
-              {/* Environments */}
+              {/* Environments and Agents */}
               {expandedProjects.has(project.id) && (
                 <div className="border-t border-gray-200 bg-gray-50 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-medium text-gray-700">Environments</h4>
-                    <button
-                      onClick={() => {
-                        setShowEnvForm(prev => new Set(prev).add(project.id))
-                        setNewEnvData({
-                          name: '',
-                          type: 'local-wsl',
-                          project_path: '',
-                        })
-                      }}
-                      className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      <Plus size={16} />
-                      Add Environment
-                    </button>
-                  </div>
+                  {/* Environments Section */}
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium text-gray-700">Environments</h4>
+                      <button
+                        onClick={() => {
+                          setShowEnvForm(prev => new Set(prev).add(project.id))
+                          setNewEnvData({
+                            name: '',
+                            type: 'local-wsl',
+                            project_path: '',
+                          })
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        <Plus size={16} />
+                        Add Environment
+                      </button>
+                    </div>
 
                   {/* New Environment Form */}
                   {showEnvForm.has(project.id) && (
@@ -534,6 +568,42 @@ export default function ProjectsPage() {
                       ))}
                     </div>
                   )}
+                  </div>
+
+                  {/* Agents Section */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Agents</h4>
+                      <button
+                        onClick={() => setLinkingAgent(project.id)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
+                        Link Agent
+                      </button>
+                    </div>
+                    {!project.agent_paths || project.agent_paths.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic">No agents linked yet. Agents are created automatically when you add an environment.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {project.agent_paths.map(path => {
+                          const name = path.split('/').slice(-2, -1)[0] || path
+                          return (
+                            <div key={path} className="flex items-center justify-between py-1.5 px-3 bg-white border border-gray-200 rounded text-xs">
+                              <span className="font-mono text-gray-600">{name}</span>
+                              <button
+                                onClick={() => handleUnlinkAgent(project.id, path)}
+                                className="text-gray-400 hover:text-red-500 ml-2"
+                                title="Unlink agent"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -553,6 +623,46 @@ export default function ProjectsPage() {
           </div>
         )}
       </div>
+
+      {/* Link Agent Modal */}
+      {linkingAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setLinkingAgent(null)} />
+          <div className="relative bg-white rounded-lg p-6 max-w-sm w-full shadow-lg">
+            <h3 className="text-sm font-semibold mb-4">Link Agent to Project</h3>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Select agent workspace</label>
+              <select
+                value={selectedLinkPath}
+                onChange={e => setSelectedLinkPath(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                <option value="">Choose agent...</option>
+                {allWorkspaces
+                  ?.filter(ws => !projects?.find(p => p.id === linkingAgent)?.agent_paths?.includes(ws.path))
+                  .map(ws => (
+                    <option key={ws.id} value={ws.path}>{ws.name}</option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setLinkingAgent(null)}
+                className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLinkAgent}
+                disabled={!selectedLinkPath || linkAgentMutation.isPending}
+                className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+              >
+                {linkAgentMutation.isPending ? 'Linking...' : 'Link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

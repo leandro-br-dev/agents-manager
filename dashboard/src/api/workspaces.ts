@@ -43,7 +43,7 @@ export function useGetWorkspace(id: string) {
 export function useCreateWorkspace() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { name: string; project_path?: string; anthropic_base_url?: string }) =>
+    mutationFn: (data: { name: string; project_path?: string; anthropic_base_url?: string; project_id?: string }) =>
       apiClient.post<{ id: string; path: string }>('/api/workspaces', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: workspaceKeys.list() }),
   })

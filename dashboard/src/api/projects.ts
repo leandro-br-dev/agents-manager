@@ -19,6 +19,7 @@ export type Project = {
   description: string | null
   created_at: string
   environments: Environment[]
+  agent_paths?: string[]
 }
 
 export function useGetProjects() {
@@ -81,5 +82,29 @@ export function useGetAllEnvironments() {
         p.environments.map(e => ({ ...e, project_name: p.name }))
       ) as (Environment & { project_name: string })[]
     },
+  })
+}
+
+export function useLinkAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, workspace_path }: { projectId: string; workspace_path: string }) =>
+      apiFetch(`/api/projects/${projectId}/agents`, {
+        method: 'POST',
+        body: JSON.stringify({ workspace_path })
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+  })
+}
+
+export function useUnlinkAgent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ projectId, workspace_path }: { projectId: string; workspace_path: string }) =>
+      apiFetch(`/api/projects/${projectId}/agents`, {
+        method: 'DELETE',
+        body: JSON.stringify({ workspace_path })
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
   })
 }
