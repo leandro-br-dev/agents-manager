@@ -75,26 +75,20 @@ async def run_chat_turn(
     captured_texts = []
     final_result = None
     new_sdk_session_id = None
-    message_count = 0
 
     try:
         async for message_obj in query(prompt=message, options=options):
-            message_count += 1
             msg_type = getattr(message_obj, 'type', None) or type(message_obj).__name__
-            logger.debug(f'[chat] Received message {message_count}: type={msg_type}')
 
             if msg_type in ('assistant', 'AssistantMessage') or hasattr(message_obj, 'content'):
                 content = getattr(message_obj, 'content', [])
-                logger.debug(f'[chat] AssistantMessage content type: {type(content)}, length: {len(content) if isinstance(content, list) else "not a list"}')
                 for block in (content if isinstance(content, list) else []):
                     block_type = getattr(block, 'type', None)
-                    logger.debug(f'[chat] Block type: {block_type}, has text attr: {hasattr(block, "text")}')
                     # Capture text blocks - type might be 'text' or None (for text-only blocks)
                     if block_type in ('text', None) and hasattr(block, 'text'):
                         text = getattr(block, 'text', '')
                         if text:  # Only append non-empty text
                             captured_texts.append(text)
-                            logger.debug(f'[chat] Text block: {len(text)} chars')
                             if log_callback:
                                 await log_callback([{
                                     'session_id': session_id,
@@ -104,14 +98,11 @@ async def run_chat_turn(
 
             elif msg_type in ('result', 'ResultMessage') or isinstance(message_obj, ResultMessage):
                 final_result = message_obj
-                logger.debug(f'[chat] ResultMessage received')
                 # Capturar sdk_session_id do resultado
                 new_sdk_session_id = (
                     getattr(message_obj, 'session_id', None) or
                     getattr(message_obj, 'sessionId', None)
                 )
-
-        logger.debug(f'[chat] Stream ended: {message_count} messages, {len(captured_texts)} text blocks')
 
     except ProcessError as e:
         # Enhanced error handling for ProcessError from SDK

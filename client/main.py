@@ -323,12 +323,9 @@ async def process_chat_session(session: dict, client: object) -> None:
 
     async def on_response(text: str, structured):
         """Callback when assistant response is complete."""
-        logger.info(f'Session {session_id[:8]} received response: {len(text)} chars')
         response = client.save_assistant_message(session_id, text, structured)
         if response.error:
             logger.error(f'Failed to save assistant message: {response.error}')
-        else:
-            logger.info(f'Session {session_id[:8]} response saved')
 
     async def log_callback(logs: list):
         """Callback for streaming logs."""
@@ -344,7 +341,6 @@ async def process_chat_session(session: dict, client: object) -> None:
         return
 
     try:
-        logger.info(f'Session {session_id[:8]} starting chat turn...')
         new_sdk_session_id = await run_chat_turn(
             session_id=session_id,
             message=user_message,
@@ -356,11 +352,9 @@ async def process_chat_session(session: dict, client: object) -> None:
             log_callback=log_callback,
         )
 
-        logger.info(f'Session {session_id[:8]} completed successfully')
+        logger.info(f'Session {session_id[:8]} completed')
     except Exception as e:
         logger.error(f'Chat session {session_id[:8]} error: {e}')
-        import traceback
-        logger.error(traceback.format_exc())
         # Save error as assistant message
         await on_response(f'Error: {str(e)}', None)
 
