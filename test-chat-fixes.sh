@@ -29,7 +29,8 @@ pkill -9 -f 'python main.py --daemon' 2>/dev/null || true
 sleep 1
 
 # Start daemon in background with log capture
-python main.py --daemon > /tmp/daemon-test-full.log 2>&1 &
+# Use PYTHONUNBUFFERED=1 to ensure logs are written immediately
+PYTHONUNBUFFERED=1 python main.py --daemon > /tmp/daemon-test-full.log 2>&1 &
 DAEMON_PID=$!
 echo "   Daemon PID: $DAEMON_PID"
 
