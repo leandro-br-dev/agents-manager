@@ -6,8 +6,7 @@ Mantém o sdk_session_id para permitir conversas iterativas.
 
 from __future__ import annotations
 
-import json
-import re
+import os
 from typing import Callable, Awaitable
 
 from claude_agent_sdk import (
@@ -19,15 +18,7 @@ from claude_agent_sdk import (
 )
 
 from orchestrator import logger
-from orchestrator.plan import extract_structured_output
-
-
-# Structured output patterns for quick actions
-STRUCTURED_PATTERNS = [
-    ('plan', r'<plan>\s*({.*?})\s*</plan>'),
-    ('review', r'<review>\s*({.*?})\s*</review>'),
-    ('diagnosis', r'<diagnosis>\s*({.*?})\s*</diagnosis>'),
-]
+from orchestrator.runner import extract_structured_output, STRUCTURED_PATTERNS
 
 
 async def run_chat_turn(
@@ -60,9 +51,15 @@ async def run_chat_turn(
         O sdk_session_id (novo ou existente) para persistência
     """
     # Build options for the SDK
+    # Note: workspace_path is used for settings.local.json discovery, but the SDK
+    # doesn't have a "workspace" field. The cwd field is used for working directory
+    # and settings discovery. If workspace_path != cwd, we should use workspace_path
+    # as cwd to ensure settings are loaded correctly.
+    workspace_settings = os.path.join(workspace_path, '.claude', 'settings.local.json')
+    effective_cwd = workspace_path if os.path.exists(workspace_settings) else cwd
+
     options_kwargs = {
-        "cwd": cwd,
-        "workspace": workspace_path,
+        "cwd": effective_cwd,
         "permission_mode": "acceptEdits",
     }
 

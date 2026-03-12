@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import asyncio
+import inspect
 import os
 import signal
 import socket
@@ -20,6 +21,15 @@ import anyio
 from orchestrator import logger
 from orchestrator.plan import load_plan, Plan, Task
 from orchestrator.runner import run_plan
+
+
+# Log SDK fields on import for debugging
+try:
+    from claude_agent_sdk import ClaudeAgentOptions
+    sdk_fields = list(inspect.signature(ClaudeAgentOptions.__init__).parameters.keys())
+    logger.debug(f'SDK ClaudeAgentOptions fields: {sdk_fields}')
+except Exception:
+    pass
 
 
 def parse_args() -> argparse.Namespace:
