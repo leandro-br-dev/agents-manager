@@ -85,8 +85,10 @@ async def run_chat_turn(
 
             if msg_type in ('assistant', 'AssistantMessage') or hasattr(message_obj, 'content'):
                 content = getattr(message_obj, 'content', [])
+                logger.debug(f'[chat] AssistantMessage content type: {type(content)}, length: {len(content) if isinstance(content, list) else "not a list"}')
                 for block in (content if isinstance(content, list) else []):
                     block_type = getattr(block, 'type', None)
+                    logger.debug(f'[chat] Block type: {block_type}, has text attr: {hasattr(block, "text")}')
                     if block_type == 'text':
                         text = getattr(block, 'text', '')
                         captured_texts.append(text)
