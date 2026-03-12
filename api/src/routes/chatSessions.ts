@@ -95,10 +95,25 @@ router.get('/:id', authenticateToken, (req, res) => {
   return res.json({ data: { ...session as any, messages }, error: null })
 })
 
-// DELETE /api/sessions/:id
+// DELETE /api/sessions/:id — deletar sessão e todas as mensagens (cascade)
 router.delete('/:id', authenticateToken, (req, res) => {
-  db.prepare('DELETE FROM chat_sessions WHERE id = ?').run(req.params.id)
-  return res.json({ data: { deleted: true }, error: null })
+  const { id } = req.params
+
+  // Verificar que a sessão existe
+  const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(id)
+  if (!session) {
+    return res.status(404).json({ data: null, error: 'Session not found' })
+  }
+
+  // Não permitir deletar sessões que estão rodando
+  if (session.status === 'running') {
+    return res.status(409).json({ data: null, error: 'Cannot delete a running session. Wait for it to complete.' })
+  }
+
+  // Deletar sessão (messages serão deletadas em cascade pelo banco)
+  db.prepare('DELETE FROM chat_sessions WHERE id = ?').run(id)
+
+  return res.json({ data: { deleted: true, id }, error: null })
 })
 
 // POST /api/sessions/:id/message — enviar mensagem (inicia execução no daemon)

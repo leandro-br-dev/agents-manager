@@ -81,25 +81,36 @@ export default function ChatPage() {
               <p className="text-xs text-gray-400">No conversations yet</p>
             </div>
           ) : sessions.map((s: any) => (
-            <button
+            <div
               key={s.id}
-              onClick={() => setSelectedId(s.id)}
-              className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+              className={`group relative border-b border-gray-100 ${
                 selectedId === s.id ? 'bg-gray-50 border-l-2 border-l-gray-900' : ''
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-700 truncate">{s.name}</span>
-                {s.status === 'running' && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                )}
-              </div>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {new Date(s.updated_at).toLocaleDateString('en-US', {
-                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                })}
-              </p>
-            </button>
+              <button
+                onClick={() => setSelectedId(s.id)}
+                className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-gray-700 truncate pr-6">{s.name}</span>
+                  {s.status === 'running' && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {new Date(s.updated_at).toLocaleDateString('en-US', {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                  })}
+                </p>
+              </button>
+              <button
+                onClick={() => setDeleteConfirm(s.id)}
+                className="absolute right-2 top-3 opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 p-1"
+                title="Delete conversation"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           ))}
         </div>
       </div>

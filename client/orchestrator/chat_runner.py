@@ -66,6 +66,11 @@ async def run_chat_turn(
         "permission_mode": "acceptEdits",
     }
 
+    # Unset CLAUDECODE to prevent nested session detection
+    # This allows the daemon to run within Claude Code sessions
+    if "CLAUDECODE" in os.environ:
+        del os.environ["CLAUDECODE"]
+
     # Se temos um sdk_session_id, adicionar para retomar a sessão
     # O SDK usa resume internamente quando session_id é passado
     if sdk_session_id:
@@ -161,9 +166,23 @@ async def run_chat_turn(
         return sdk_session_id
 
     except Exception as e:
-        logger.error(f'Chat turn error: {e}')
+        # Generic exception handler - also try to capture stderr
+        error_details = str(e)
+
+        # Try to get stderr from our buffer even for generic exceptions
+        real_stderr = stderr_buffer.getvalue()
+        if real_stderr:
+            error_details += f"\n\nStderr output:\n{real_stderr}"
+
+        # Check if this is a ProcessError with additional info
+        if hasattr(e, 'exit_code') and e.exit_code:
+            error_details += f"\nExit code: {e.exit_code}"
+        if hasattr(e, 'stderr') and e.stderr and e.stderr != "Check stderr output for details":
+            error_details += f"\nStderr: {e.stderr}"
+
+        logger.error(f'Chat turn error: {error_details}')
         if on_response:
-            await on_response(str(e), None)
+            await on_response(f'❌ {error_details}', None)
         return sdk_session_id
 
     # Montar resposta completa
