@@ -89,16 +89,18 @@ async def run_chat_turn(
                 for block in (content if isinstance(content, list) else []):
                     block_type = getattr(block, 'type', None)
                     logger.debug(f'[chat] Block type: {block_type}, has text attr: {hasattr(block, "text")}')
-                    if block_type == 'text':
+                    # Capture text blocks - type might be 'text' or None (for text-only blocks)
+                    if block_type in ('text', None) and hasattr(block, 'text'):
                         text = getattr(block, 'text', '')
-                        captured_texts.append(text)
-                        logger.debug(f'[chat] Text block: {len(text)} chars')
-                        if log_callback:
-                            await log_callback([{
-                                'session_id': session_id,
-                                'role': 'assistant_chunk',
-                                'message': text
-                            }])
+                        if text:  # Only append non-empty text
+                            captured_texts.append(text)
+                            logger.debug(f'[chat] Text block: {len(text)} chars')
+                            if log_callback:
+                                await log_callback([{
+                                    'session_id': session_id,
+                                    'role': 'assistant_chunk',
+                                    'message': text
+                                }])
 
             elif msg_type in ('result', 'ResultMessage') or isinstance(message_obj, ResultMessage):
                 final_result = message_obj
