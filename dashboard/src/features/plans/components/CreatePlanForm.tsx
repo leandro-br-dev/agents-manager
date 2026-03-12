@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router';
 import { useCreatePlan, type Task } from '@/api/plans';
 import { useGetWorkspaces } from '@/api/workspaces';
 import { useGetProjects } from '@/api/projects';
@@ -25,6 +25,7 @@ interface FormErrors {
 
 export function CreatePlanForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const createMutation = useCreatePlan();
   const { data: projects = [] } = useGetProjects();
   const [projectId, setProjectId] = useState('');
@@ -38,20 +39,50 @@ export function CreatePlanForm() {
   const selectedProject = projects.find(p => p.id === projectId);
   const environments = selectedProject?.environments ?? [];
 
+  // Helper function to create an empty task
+  const getEmptyTask = (): TaskForm => ({
+    id: crypto.randomUUID(),
+    name: '',
+    prompt: '',
+    cwd: '',
+    workspace: '',
+    permission_mode: 'allow',
+    depends_on: [],
+    tools: [],
+  });
+
   const [planName, setPlanName] = useState('');
-  const [tasks, setTasks] = useState<TaskForm[]>([
-    {
-      id: crypto.randomUUID(),
-      name: '',
-      prompt: '',
-      cwd: '',
-      workspace: '',
-      permission_mode: 'allow',
-      depends_on: [],
-      tools: [],
-    },
-  ]);
+  const [tasks, setTasks] = useState<TaskForm[]>([getEmptyTask()]);
   const [errors, setErrors] = useState<FormErrors>({});
+
+  // Prefill form with plan data from navigation state
+  useEffect(() => {
+    const incomingPlan = location.state?.plan as any;
+    if (incomingPlan) {
+      // Set plan name
+      setPlanName(incomingPlan.name || '');
+
+      // Convert tasks from incoming plan to TaskForm format
+      const prefilledTasks = (incomingPlan.tasks || []).map((task: any) => ({
+        id: task.id || crypto.randomUUID(),
+        name: task.name || '',
+        prompt: task.prompt || '',
+        cwd: task.cwd || '',
+        workspace: task.workspace || '',
+        permission_mode: task.permission_mode || 'allow',
+        depends_on: task.depends_on || [],
+        tools: task.tools || [],
+        // Note: env_context and selectedEnvId are not pre-filled as they require project lookup
+        env_context: undefined,
+        selectedEnvId: undefined,
+      }));
+
+      setTasks(prefilledTasks.length > 0 ? prefilledTasks : [getEmptyTask()]);
+
+      // Clear the state to prevent repopulation on refresh
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [location.state]);
 
   // Handle project change - reset agent and environment for all tasks
   const handleProjectChange = (newProjectId: string) => {
@@ -133,19 +164,7 @@ export function CreatePlanForm() {
   };
 
   const addTask = () => {
-    setTasks([
-      ...tasks,
-      {
-        id: crypto.randomUUID(),
-        name: '',
-        prompt: '',
-        cwd: '',
-        workspace: '',
-        permission_mode: 'allow',
-        depends_on: [],
-        tools: [],
-      },
-    ]);
+    setTasks([...tasks, getEmptyTask()]);
   };
 
   const removeTask = (index: number) => {

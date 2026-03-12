@@ -7,6 +7,25 @@ import { useGetSessions, useGetSession, useCreateSession, useSendMessage, useDel
 import { useGetProjects } from '@/api/projects'
 import { useGetWorkspaces } from '@/api/workspaces'
 import { API_BASE_URL, API_TOKEN } from '@/api/client'
+import { useNavigate } from 'react-router'
+
+// Helper function to extract JSON from <plan> tags
+interface PlanData {
+  name?: string;
+  summary?: string;
+  tasks?: any[];
+  [key: string]: any;
+}
+
+function extractPlan(content: string): PlanData | null {
+  const match = content.match(/<plan>\s*([\s\S]*?)\s*<\/plan>/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1].trim()) as PlanData;
+  } catch {
+    return null;
+  }
+}
 
 export default function ChatPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -40,20 +59,18 @@ export default function ChatPage() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }, [session?.messages?.length])
 
-  // Detect structured_output in assistant messages
+  // Detect <plan> tags in assistant messages
   useEffect(() => {
     if (!session?.messages) return
     const lastAssistant = [...session.messages]
       .reverse()
       .find((m: any) => m.role === 'assistant')
-    if (!lastAssistant) return
-    try {
-      const parsed = JSON.parse(lastAssistant.content)
-      if (parsed.structured_output?.type === 'plan' && !pendingPlan) {
-        setPendingPlan(parsed.structured_output.content)
-      }
-    } catch {}
-  }, [session?.messages])
+    if (!lastAssistant || pendingPlan) return
+    const planData = extractPlan(lastAssistant.content)
+    if (planData) {
+      setPendingPlan(planData)
+    }
+  }, [session?.messages, pendingPlan])
 
   const handleSend = async () => {
     if (!input.trim() || !selectedId || session?.status === 'running') return
@@ -156,12 +173,17 @@ export default function ChatPage() {
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
             {(session?.messages ?? []).map((msg: any, msgIndex: number) => {
               let displayContent = msg.content
-              let structuredOut = null
+              let planData = null
               try {
                 const parsed = JSON.parse(msg.content)
                 displayContent = parsed.text ?? msg.content
-                structuredOut = parsed.structured_output
-              } catch {}
+              } catch {
+                // If JSON parse fails, check for <plan> tags
+                planData = extractPlan(msg.content)
+                if (planData) {
+                  displayContent = msg.content.replace(/<plan>[\s\S]*?<\/plan>/g, '').trim() || 'Plan generated'
+                }
+              }
 
               // Check if this is the last user message without a response
               const messages = session?.messages ?? []
@@ -207,25 +229,21 @@ export default function ChatPage() {
                     )}
 
                     {/* Structured output card */}
-                    {structuredOut && (
+                    {planData && (
                       <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-xs font-semibold text-green-800 capitalize mb-1">
-                          {structuredOut.type} generated
+                          Plan generated
                         </p>
-                        {structuredOut.type === 'plan' && (
-                          <>
-                            <p className="text-xs text-green-700">
-                              {structuredOut.content?.name} • {structuredOut.content?.tasks?.length} tasks
-                            </p>
-                            <Button
-                              variant="primary" size="sm"
-                              className="mt-2"
-                              onClick={() => { setPendingPlan(structuredOut.content); setShowPlanModal(true) }}
-                            >
-                              Review & Create Workflow
-                            </Button>
-                          </>
-                        )}
+                        <p className="text-xs text-green-700">
+                          {planData.name} • {planData.tasks?.length} tasks
+                        </p>
+                        <Button
+                          variant="primary" size="sm"
+                          className="mt-2"
+                          onClick={() => { setPendingPlan(planData); setShowPlanModal(true) }}
+                        >
+                          Review & Create Workflow
+                        </Button>
                       </div>
                     )}
 
@@ -352,11 +370,29 @@ function NewChatModal({ onClose, onCreate }: { onClose: () => void; onCreate: (i
   const [sessionName] = useState('')
 
   const { data: projects = [] } = useGetProjects()
-  const { data: workspaces = [] } = useGetWorkspaces(projectId ? { project_id: projectId } : undefined)
+  const { data: allWorkspaces = [] } = useGetWorkspaces()
+
+  // Filter agents by selected project
+  const filteredWorkspaces = projectId
+    ? allWorkspaces.filter(ws => ws.project_id === projectId)
+    : allWorkspaces
+
   const selectedProject = projects.find(p => p.id === projectId)
   const environments = selectedProject?.environments ?? []
-  const selectedWs = workspaces.find(ws => ws.id === workspaceId)
+  const selectedWs = allWorkspaces.find(ws => ws.id === workspaceId)
   const createSession = useCreateSession()
+
+  const handleProjectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newProjectId = e.target.value
+    setProjectId(newProjectId)
+    // Clear workspace selection if the selected agent doesn't belong to the new project
+    if (workspaceId && selectedWs) {
+      const ws = allWorkspaces.find(w => w.id === workspaceId)
+      if (ws && ws.project_id !== newProjectId) {
+        setWorkspaceId('')
+      }
+    }
+  }
 
   const handleCreate = async () => {
     if (!selectedWs) return
@@ -375,14 +411,18 @@ function NewChatModal({ onClose, onCreate }: { onClose: () => void; onCreate: (i
       <div className="relative bg-white rounded-lg border border-gray-200 p-6 max-w-md w-full mx-4 space-y-4">
         <h3 className="text-sm font-semibold text-gray-900">New Chat Session</h3>
 
-        <Select label="Project" value={projectId} onChange={e => { setProjectId(e.target.value); setWorkspaceId('') }}>
+        <Select label="Project" value={projectId} onChange={handleProjectChange}>
           <option value="">All projects</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
 
         <Select label="Agent *" value={workspaceId} onChange={e => setWorkspaceId(e.target.value)} required>
           <option value="" disabled>Select agent...</option>
-          {workspaces.map(ws => <option key={ws.id} value={ws.id}>{ws.name}</option>)}
+          {filteredWorkspaces.length === 0 && projectId ? (
+            <option value="" disabled>No agents for this project</option>
+          ) : (
+            filteredWorkspaces.map(ws => <option key={ws.id} value={ws.id}>{ws.name}</option>)
+          )}
         </Select>
 
         {environments.length > 0 && (
@@ -414,41 +454,70 @@ interface PlanCreateModalProps {
 }
 
 function PlanCreateModal({ onClose, prefillData }: PlanCreateModalProps) {
-  const navigate = (path: string) => {
-    window.location.href = path
-  }
+  const navigate = useNavigate()
 
   const handleCreateFromPlan = () => {
-    // For now, navigate to plans page with the prefill data
-    // In a full implementation, we'd pass this through state or a temporary store
+    // Navigate to plans page with the plan data in state
     onClose()
-    navigate('/plans/new')
+    navigate('/plans/new', {
+      state: { plan: prefillData }
+    })
+  }
+
+  // Helper to truncate prompt text
+  const truncatePrompt = (prompt: string, maxLength: number = 200) => {
+    if (!prompt) return ''
+    return prompt.length > maxLength ? prompt.slice(0, maxLength) + '...' : prompt
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-lg border border-gray-200 p-6 max-w-2xl w-full mx-4 space-y-4 max-h-[85vh] overflow-y-auto">
+      <div className="relative bg-white rounded-lg border border-gray-200 p-6 max-w-3xl w-full mx-4 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Review Generated Plan</h3>
-            <p className="text-xs text-gray-500 mt-1">{prefillData?.name}</p>
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-gray-900">{prefillData?.name || 'Untitled Plan'}</h3>
+            {prefillData?.summary && (
+              <p className="text-sm text-gray-600 mt-1">{prefillData.summary}</p>
+            )}
+            <p className="text-xs text-gray-400 mt-1">{prefillData?.tasks?.length || 0} tasks</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-5 w-5" />
           </button>
         </div>
 
         <div className="space-y-3">
           {prefillData?.tasks?.map((task: any, idx: number) => (
-            <div key={idx} className="border border-gray-200 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{idx + 1}</span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">{task.name}</p>
-                  <p className="text-xs text-gray-600 mt-1">{task.prompt}</p>
+            <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
+              <div className="flex items-start gap-3">
+                <span className="flex-shrink-0 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                  {idx + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-semibold text-gray-900">{task.name || `Task ${idx + 1}`}</h4>
+                    {task.cwd && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        <span className="font-mono">{task.cwd}</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">
+                    {truncatePrompt(task.prompt)}
+                  </p>
                   {task.depends_on && task.depends_on.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-1">Depends on: {task.depends_on.join(', ')}</p>
+                    <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                      <span className="text-xs text-gray-500">
+                        Depends on: <span className="font-medium">{task.depends_on.join(', ')}</span>
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -456,11 +525,14 @@ function PlanCreateModal({ onClose, prefillData }: PlanCreateModalProps) {
           ))}
         </div>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" size="sm" onClick={onClose}>Discard</Button>
+        <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Discard
+          </Button>
           <Button
             variant="primary" size="sm"
             onClick={handleCreateFromPlan}
+            className="gap-1.5"
           >
             <Zap className="h-3.5 w-3.5" /> Create Workflow
           </Button>
