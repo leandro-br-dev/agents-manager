@@ -341,6 +341,7 @@ async def process_chat_session(session: dict, client: object) -> None:
         return
 
     try:
+        logger.info(f'Session {session_id[:8]} starting chat turn...')
         new_sdk_session_id = await run_chat_turn(
             session_id=session_id,
             message=user_message,
@@ -352,9 +353,11 @@ async def process_chat_session(session: dict, client: object) -> None:
             log_callback=log_callback,
         )
 
-        logger.info(f'Session {session_id[:8]} completed')
+        logger.info(f'Session {session_id[:8]} completed successfully')
     except Exception as e:
         logger.error(f'Chat session {session_id[:8]} error: {e}')
+        import traceback
+        logger.error(traceback.format_exc())
         # Save error as assistant message
         await on_response(f'Error: {str(e)}', None)
 

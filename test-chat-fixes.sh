@@ -113,6 +113,9 @@ if [ -f /tmp/daemon-test-full.log ]; then
 else
   echo "   No log file found"
 fi
+echo ""
+echo "   Checking process output:"
+ps aux | grep 'python main.py --daemon' | grep -v grep || echo "   Daemon not running"
 
 # Cleanup
 echo ""
