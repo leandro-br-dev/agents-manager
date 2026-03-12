@@ -30,7 +30,8 @@ sleep 1
 
 # Start daemon in background with log capture
 # Use PYTHONUNBUFFERED=1 to ensure logs are written immediately
-PYTHONUNBUFFERED=1 python main.py --daemon > /tmp/daemon-test-full.log 2>&1 &
+# Use AGENT_DEBUG=1 to enable detailed debug logging
+PYTHONUNBUFFERED=1 AGENT_DEBUG=1 python main.py --daemon > /tmp/daemon-test-full.log 2>&1 &
 DAEMON_PID=$!
 echo "   Daemon PID: $DAEMON_PID"
 
