@@ -7,6 +7,7 @@ Mantém o sdk_session_id para permitir conversas iterativas.
 from __future__ import annotations
 
 import os
+import subprocess
 from typing import Callable, Awaitable
 
 from claude_agent_sdk import (
@@ -16,6 +17,7 @@ from claude_agent_sdk import (
     TextBlock,
     query,
 )
+from claude_agent_sdk._errors import ProcessError
 
 from orchestrator import logger
 from orchestrator.runner import extract_structured_output, STRUCTURED_PATTERNS
@@ -99,6 +101,46 @@ async def run_chat_turn(
                     getattr(message_obj, 'session_id', None) or
                     getattr(message_obj, 'sessionId', None)
                 )
+
+    except ProcessError as e:
+        # Enhanced error handling for ProcessError from SDK
+        error_details = str(e)
+
+        # Extract additional information from ProcessError
+        if hasattr(e, 'exit_code') and e.exit_code:
+            error_details += f"\nExit code: {e.exit_code}"
+
+        if hasattr(e, 'stderr'):
+            error_details += f"\nStderr: {e.stderr}"
+
+        # Provide helpful context for common errors
+        if 'nested session' in str(e).lower() or 'CLAUDECODE' in str(e):
+            error_details += "\n\n💡 Tip: The daemon cannot run inside a Claude Code session. " \
+                           "Ensure CLAUDECODE environment variable is not set when starting the daemon."
+
+        # Check for ANTHROPIC_BASE_URL connectivity issues
+        settings_path = os.path.join(workspace_path, '.claude', 'settings.local.json')
+        if os.path.exists(settings_path):
+            try:
+                import json as _json
+                with open(settings_path) as f:
+                    settings = _json.load(f)
+                base_url = settings.get('env', {}).get('ANTHROPIC_BASE_URL', '')
+                if base_url and 'localhost' in base_url:
+                    # Try to check if the service is accessible
+                    try:
+                        import urllib.request
+                        urllib.request.urlopen(base_url, timeout=2)
+                    except Exception as url_err:
+                        error_details += f"\n\n⚠️  ANTHROPIC_BASE_URL={base_url} is not accessible: {url_err}"
+                        error_details += "\n   Ensure the service (e.g., llm-router) is running."
+            except Exception:
+                pass  # Ignore errors when trying to provide helpful context
+
+        logger.error(f'Chat turn ProcessError: {error_details}')
+        if on_response:
+            await on_response(f'❌ {error_details}', None)
+        return sdk_session_id
 
     except Exception as e:
         logger.error(f'Chat turn error: {e}')

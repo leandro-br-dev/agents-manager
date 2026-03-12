@@ -27,6 +27,16 @@ else
   echo '  ⚠ claude CLI not found in PATH'
 fi
 
+# Verificar llm-router (usado pelos agentes)
+echo '→ Checking llm-router (optional, used by agents)...'
+if curl -s http://localhost:8083/health > /dev/null 2>&1 || curl -s http://localhost:8083/ > /dev/null 2>&1; then
+  echo '  ✓ llm-router running on :8083'
+else
+  echo '  ⚠ llm-router NOT found on :8083'
+  echo '    Agents will use default Claude auth (OAuth)'
+  echo '    To use llm-router: start it separately before running this script'
+fi
+
 # Configurar env padrão se não existir
 if [ ! -f "$ROOT/api/.env" ]; then
   echo 'Creating api/.env with defaults...'

@@ -83,6 +83,11 @@ async def run_daemon(server_url: str, token: str) -> None:
         server_url: Base URL of the API server
         token: Bearer token for authentication
     """
+    # Clear CLAUDECODE to prevent nested session errors when launching subprocesses
+    if 'CLAUDECODE' in os.environ:
+        logger.info("Unsetting CLAUDECODE to avoid nested session detection")
+        del os.environ['CLAUDECODE']
+
     from orchestrator.daemon_client import DaemonClient
 
     client = DaemonClient(server_url, token)
@@ -101,6 +106,9 @@ async def run_daemon(server_url: str, token: str) -> None:
 
     # Track running sessions to avoid processing the same session multiple times
     running_sessions: set[str] = set()
+
+    # Track background tasks for proper cleanup
+    background_tasks: set[asyncio.Task] = set()
 
     try:
         while not shutdown_requested:
@@ -198,7 +206,9 @@ async def run_daemon(server_url: str, token: str) -> None:
                         finally:
                             running_sessions.discard(s.get('id'))
 
-                    asyncio.create_task(_run_session())
+                    task = asyncio.create_task(_run_session())
+                    background_tasks.add(task)
+                    task.add_done_callback(background_tasks.discard)
 
             # Wait before next poll (unless shutting down)
             if not shutdown_requested:
