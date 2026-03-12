@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import subprocess
 from typing import Callable, Awaitable
+from io import StringIO
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -70,6 +71,17 @@ async def run_chat_turn(
     if sdk_session_id:
         options_kwargs["resume"] = sdk_session_id
 
+    # Capture stderr to get real error messages
+    stderr_buffer = StringIO()
+
+    def stderr_callback(line: str) -> None:
+        """Capture stderr lines for better error diagnostics."""
+        logger.debug(f"Claude CLI stderr: {line}")
+        stderr_buffer.write(line + "\n")
+
+    options_kwargs["stderr"] = stderr_callback
+    options_kwargs["extra_args"] = {"debug-to-stderr": True}  # Enable debug mode
+
     options = ClaudeAgentOptions(**options_kwargs)
 
     captured_texts = []
@@ -112,7 +124,11 @@ async def run_chat_turn(
         if hasattr(e, 'exit_code') and e.exit_code:
             error_details += f"\nExit code: {e.exit_code}"
 
-        if hasattr(e, 'stderr'):
+        # Get the real stderr from our buffer
+        real_stderr = stderr_buffer.getvalue()
+        if real_stderr:
+            error_details += f"\n\nStderr output:\n{real_stderr}"
+        elif hasattr(e, 'stderr') and e.stderr and e.stderr != "Check stderr output for details":
             error_details += f"\nStderr: {e.stderr}"
 
         # Provide helpful context for common errors
