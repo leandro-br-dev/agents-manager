@@ -6,26 +6,9 @@ import {
 import { useGetSessions, useGetSession, useCreateSession, useSendMessage, useDeleteSession, useDeleteMessage, useClearHistory } from '@/api/sessions'
 import { useGetProjects } from '@/api/projects'
 import { useGetWorkspaces } from '@/api/workspaces'
+import { useCreatePlan } from '@/api/plans'
 import { API_BASE_URL, API_TOKEN } from '@/api/client'
 import { useNavigate } from 'react-router'
-
-// Helper function to extract JSON from <plan> tags
-interface PlanData {
-  name?: string;
-  summary?: string;
-  tasks?: any[];
-  [key: string]: any;
-}
-
-function extractPlan(content: string): PlanData | null {
-  const match = content.match(/<plan>\s*([\s\S]*?)\s*<\/plan>/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1].trim()) as PlanData;
-  } catch {
-    return null;
-  }
-}
 
 export default function ChatPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -59,17 +42,19 @@ export default function ChatPage() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }, [session?.messages?.length])
 
-  // Detect <plan> tags in assistant messages
+  // Detect structured_output in assistant messages
   useEffect(() => {
     if (!session?.messages) return
     const lastAssistant = [...session.messages]
       .reverse()
       .find((m: any) => m.role === 'assistant')
-    if (!lastAssistant || pendingPlan) return
-    const planData = extractPlan(lastAssistant.content)
-    if (planData) {
-      setPendingPlan(planData)
-    }
+    if (!lastAssistant) return
+    try {
+      const parsed = JSON.parse(lastAssistant.content)
+      if (parsed.structured_output?.type === 'plan' && !pendingPlan) {
+        setPendingPlan(parsed.structured_output.content)
+      }
+    } catch {}
   }, [session?.messages, pendingPlan])
 
   const handleSend = async () => {
@@ -173,17 +158,12 @@ export default function ChatPage() {
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
             {(session?.messages ?? []).map((msg: any, msgIndex: number) => {
               let displayContent = msg.content
-              let planData = null
+              let structuredOut = null
               try {
                 const parsed = JSON.parse(msg.content)
                 displayContent = parsed.text ?? msg.content
-              } catch {
-                // If JSON parse fails, check for <plan> tags
-                planData = extractPlan(msg.content)
-                if (planData) {
-                  displayContent = msg.content.replace(/<plan>[\s\S]*?<\/plan>/g, '').trim() || 'Plan generated'
-                }
-              }
+                structuredOut = parsed.structured_output
+              } catch {}
 
               // Check if this is the last user message without a response
               const messages = session?.messages ?? []
@@ -229,21 +209,25 @@ export default function ChatPage() {
                     )}
 
                     {/* Structured output card */}
-                    {planData && (
+                    {structuredOut && (
                       <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-xs font-semibold text-green-800 capitalize mb-1">
-                          Plan generated
+                          {structuredOut.type} generated
                         </p>
-                        <p className="text-xs text-green-700">
-                          {planData.name} • {planData.tasks?.length} tasks
-                        </p>
-                        <Button
-                          variant="primary" size="sm"
-                          className="mt-2"
-                          onClick={() => { setPendingPlan(planData); setShowPlanModal(true) }}
-                        >
-                          Review & Create Workflow
-                        </Button>
+                        {structuredOut.type === 'plan' && (
+                          <>
+                            <p className="text-xs text-green-700">
+                              {structuredOut.content?.name} • {structuredOut.content?.tasks?.length} tasks
+                            </p>
+                            <Button
+                              variant="primary" size="sm"
+                              className="mt-2"
+                              onClick={() => { setPendingPlan(structuredOut.content); setShowPlanModal(true) }}
+                            >
+                              Review & Create Workflow
+                            </Button>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -455,13 +439,27 @@ interface PlanCreateModalProps {
 
 function PlanCreateModal({ onClose, prefillData }: PlanCreateModalProps) {
   const navigate = useNavigate()
+  const createPlan = useCreatePlan()
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
-  const handleCreateFromPlan = () => {
-    // Navigate to plans page with the plan data in state
-    onClose()
-    navigate('/plans/new', {
-      state: { plan: prefillData }
-    })
+  const handleCreateFromPlan = async () => {
+    setCreating(true)
+    setCreateError(null)
+    try {
+      // Usa a mesma estrutura do import JSON — o plano já tem name + tasks
+      const created = await createPlan.mutateAsync({
+        name: prefillData.name,
+        tasks: prefillData.tasks,
+      })
+      onClose()
+      navigate(`/plans/${created.id}`)
+    } catch (err) {
+      console.error('Failed to create plan:', err)
+      setCreateError('Failed to create workflow. Please try again.')
+    } finally {
+      setCreating(false)
+    }
   }
 
   // Helper to truncate prompt text
@@ -529,13 +527,19 @@ function PlanCreateModal({ onClose, prefillData }: PlanCreateModalProps) {
           <Button variant="secondary" size="sm" onClick={onClose}>
             Discard
           </Button>
-          <Button
-            variant="primary" size="sm"
-            onClick={handleCreateFromPlan}
-            className="gap-1.5"
-          >
-            <Zap className="h-3.5 w-3.5" /> Create Workflow
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            <Button
+              variant="primary" size="sm"
+              onClick={handleCreateFromPlan}
+              disabled={creating}
+              className="gap-1.5"
+            >
+              <Zap className="h-3.5 w-3.5" /> {creating ? 'Creating...' : 'Create Workflow'}
+            </Button>
+            {createError && (
+              <p className="text-xs text-red-600">{createError}</p>
+            )}
+          </div>
         </div>
       </div>
     </div>
