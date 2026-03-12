@@ -323,9 +323,12 @@ async def process_chat_session(session: dict, client: object) -> None:
 
     async def on_response(text: str, structured):
         """Callback when assistant response is complete."""
+        logger.info(f'Session {session_id[:8]} received response: {len(text)} chars')
         response = client.save_assistant_message(session_id, text, structured)
         if response.error:
             logger.error(f'Failed to save assistant message: {response.error}')
+        else:
+            logger.info(f'Session {session_id[:8]} response saved')
 
     async def log_callback(logs: list):
         """Callback for streaming logs."""
