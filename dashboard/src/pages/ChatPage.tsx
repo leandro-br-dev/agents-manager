@@ -48,6 +48,32 @@ function extractAllPlans(content: string): PlanData[] {
   return results
 }
 
+// Extrai planos de uma mensagem — verifica tanto <plan> no texto
+// quanto structured_output.content no JSON
+function extractPlansFromMessage(content: string): PlanData[] {
+  // Tenta texto bruto com <plan> tags
+  const fromText = extractAllPlans(content)
+  if (fromText.length > 0) return fromText
+
+  // Tenta JSON com structured_output
+  try {
+    const parsed = JSON.parse(content)
+    if (
+      parsed.structured_output?.type === 'plan' &&
+      parsed.structured_output?.content &&
+      typeof parsed.structured_output.content === 'object' &&
+      parsed.structured_output.content.name &&
+      Array.isArray(parsed.structured_output.content.tasks)
+    ) {
+      return [parsed.structured_output.content]
+    }
+  } catch {
+    // não é JSON, ignora
+  }
+
+  return []
+}
+
 export default function ChatPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
@@ -88,7 +114,7 @@ export default function ChatPage() {
       .reverse()
       .find((m: any) => m.role === 'assistant')
     if (!lastAssistant) return
-    const plans = extractAllPlans(lastAssistant.content)
+    const plans = extractPlansFromMessage(lastAssistant.content)
     if (plans.length > 0 && !pendingPlan) {
       setPendingPlan(plans[plans.length - 1]) // default: último
       setPendingPlans(plans) // todos
@@ -246,7 +272,7 @@ export default function ChatPage() {
 
                     {/* Plan card - shown when message contains a <plan> block */}
                     {msg.role === 'assistant' && (() => {
-                      const plans = extractAllPlans(msg.content)
+                      const plans = extractPlansFromMessage(msg.content)
                       if (plans.length === 0) return null
                       const lastPlan = plans[plans.length - 1]
                       return (
