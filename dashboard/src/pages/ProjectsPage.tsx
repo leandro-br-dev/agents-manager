@@ -534,7 +534,7 @@ export default function ProjectsPage() {
                     ) : (
                       <div className="space-y-1">
                         {project.agent_paths.map(path => {
-                          const name = path.split('/').slice(-2, -1)[0] || path
+                          const name = path.split('/').slice(-1)[0] || path
                           return (
                             <div key={path} className="flex items-center justify-between py-1.5 px-3 bg-white border border-gray-200 rounded text-xs">
                               <span className="font-mono text-gray-600">{name}</span>

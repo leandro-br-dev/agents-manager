@@ -53,7 +53,10 @@ export function useCreateWorkspace() {
   return useMutation({
     mutationFn: (data: { name: string; project_path?: string; anthropic_base_url?: string; project_id?: string; template_id?: string }) =>
       apiClient.post<{ id: string; path: string }>('/api/workspaces', data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: workspaceKeys.list() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.list() })
+      qc.invalidateQueries({ queryKey: ['projects'] })
+    },
   })
 }
 
@@ -69,7 +72,10 @@ export function useDeleteWorkspace() {
   return useMutation({
     mutationFn: (id: string) =>
       apiClient.delete<{ deleted: boolean }>(`/api/workspaces/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: workspaceKeys.list() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.list() })
+      qc.invalidateQueries({ queryKey: ['projects'] })
+    },
   })
 }
 

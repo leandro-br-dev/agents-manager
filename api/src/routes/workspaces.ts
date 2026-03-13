@@ -408,6 +408,17 @@ router.delete('/:id', authenticateToken, (req, res) => {
   }
 
   const projectPath = path.dirname(workspace.path) // get the project root path from coderPath
+  const coderPath = workspace.path
+
+  // Remove from project_agents table to clean up the link
+  db.prepare(
+    'DELETE FROM project_agents WHERE workspace_path = ?'
+  ).run(coderPath)
+
+  // Also remove from agent_environments table if any links exist
+  db.prepare(
+    'DELETE FROM agent_environments WHERE workspace_path = ?'
+  ).run(coderPath)
 
   // Always delete the entire project directory
   fs.rmSync(projectPath, { recursive: true, force: true })
