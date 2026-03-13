@@ -191,11 +191,9 @@ export default function ChatPage() {
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
             {(session?.messages ?? []).map((msg: any, msgIndex: number) => {
               let displayContent = msg.content
-              let structuredOut = null
               try {
                 const parsed = JSON.parse(msg.content)
                 displayContent = parsed.text ?? msg.content
-                structuredOut = parsed.structured_output
               } catch {}
 
               // Check if this is the last user message without a response
@@ -241,31 +239,29 @@ export default function ChatPage() {
                       <p className="text-xs mt-1 text-blue-300 animate-pulse">⏳ waiting for response...</p>
                     )}
 
-                    {/* Structured output card */}
-                    {structuredOut && structuredOut.type === 'plan' && (() => {
+                    {/* Plan card - shown when message contains a <plan> block */}
+                    {msg.role === 'assistant' && (() => {
                       const plans = extractAllPlans(msg.content)
                       if (plans.length === 0) return null
                       const lastPlan = plans[plans.length - 1]
                       return (
                         <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                          <p className="text-xs font-semibold text-green-800 capitalize mb-1">
-                            {structuredOut.type} generated
+                          <p className="text-xs font-semibold text-green-800 mb-1">
+                            plan generated{plans.length > 1 ? ` (${plans.length} plans found)` : ''}
                           </p>
-                          <p className="text-xs text-green-700">
-                            {lastPlan?.name} • {lastPlan?.tasks?.length || 0} tasks
-                            {plans.length > 1 && ` (${plans.length} plans found)`}
+                          <p className="text-xs text-green-700 mb-2">
+                            {lastPlan.name} • {lastPlan.tasks?.length ?? 0} tasks
                           </p>
-                          <Button
-                            variant="primary" size="sm"
-                            className="mt-2"
+                          <button
                             onClick={() => {
                               setPendingPlan(lastPlan)
                               setPendingPlans(plans)
                               setShowPlanModal(true)
                             }}
+                            className="text-xs px-2 py-1 bg-gray-900 text-white rounded hover:bg-gray-700 transition-colors"
                           >
                             Review & Create Workflow
-                          </Button>
+                          </button>
                         </div>
                       )
                     })()}
