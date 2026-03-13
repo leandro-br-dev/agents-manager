@@ -30,6 +30,12 @@ class Task:
     # Skills and sub-agents: place files in <cwd>/.claude/skills/ and <cwd>/.claude/agents/
     # The SDK picks them up natively — no orchestrator involvement needed.
 
+    def __post_init__(self):
+        """Generate an ID if missing (defensive fallback for legacy data)."""
+        if not self.id:
+            import uuid
+            self.id = f'task-{uuid.uuid4().hex[:8]}'
+
     @classmethod
     def from_dict(cls, data: dict) -> 'Task':
         """Create a Task from a dictionary with backward compatibility for workspace_path."""

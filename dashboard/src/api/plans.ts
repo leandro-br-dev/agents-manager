@@ -122,6 +122,19 @@ export const useExecutePlan = () => {
   });
 };
 
+export const useResumePlan = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient.post<{ success: boolean; message: string }>(`/api/plans/${id}/resume`),
+    onSuccess: (_, planId) => {
+      queryClient.invalidateQueries({ queryKey: ['plans'] });
+      queryClient.invalidateQueries({ queryKey: ['plans', planId] });
+    },
+  });
+};
+
 export interface PlanMetrics {
   total: number;
   success_rate: number;

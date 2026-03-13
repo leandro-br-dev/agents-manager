@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
-import { useGetPlan, useExecutePlan, useDeletePlan } from '@/api/plans';
+import { useGetPlan, useExecutePlan, useDeletePlan, useResumePlan } from '@/api/plans';
 import { useLogStream } from '../hooks/useLogStream';
 import { cn } from '@/lib/utils';
-import { Trash2, Download, StopCircle } from 'lucide-react';
+import { Trash2, Download, StopCircle, RotateCcw } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -37,6 +38,7 @@ export function PlanDetail() {
   const { data: plan, isLoading: planLoading, error: planError } = useGetPlan(id || '');
   const executeMutation = useExecutePlan();
   const deletePlan = useDeletePlan();
+  const resumePlan = useResumePlan();
   const queryClient = useQueryClient();
   const forceStop = useMutation({
     mutationFn: (planId: string) =>
@@ -47,6 +49,7 @@ export function PlanDetail() {
     },
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmForceStop, setConfirmForceStop] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const handleExport = () => {
@@ -147,31 +150,43 @@ export function PlanDetail() {
               </button>
             )}
             {plan.status === 'running' && (
-  <button
-    onClick={() => {
-      if (confirm('Force stop this plan? This will mark it as failed immediately.')) {
-        forceStop.mutate(plan.id)
-      }
-    }}
-    disabled={forceStop.isPending}
-    className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 text-sm rounded hover:bg-red-50 disabled:opacity-50"
-    title="Force stop - use when daemon has crashed"
-  >
-    <StopCircle className="h-4 w-4" />
-    {forceStop.isPending ? 'Stopping...' : 'Force Stop'}
-  </button>
-)}
-            {(plan.status === 'failed' || plan.status === 'success') && (
               <button
-                onClick={handleExecute}
-                disabled={executeMutation.isPending}
-                className={cn(
-                  'rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm',
-                  'hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
-                )}
+                onClick={() => setConfirmForceStop(true)}
+                disabled={forceStop.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 text-red-600 text-sm rounded hover:bg-red-50 disabled:opacity-50"
+                title="Force stop - use when daemon has crashed"
               >
-                {executeMutation.isPending ? 'Re-queuing...' : 'Retry Plan'}
+                <StopCircle className="h-4 w-4" />
+                {forceStop.isPending ? 'Stopping...' : 'Force Stop'}
               </button>
+            )}
+            {(plan.status === 'failed' || plan.status === 'success') && (
+              <>
+                {plan.status === 'failed' && (
+                  <button
+                    onClick={() => resumePlan.mutate(plan.id)}
+                    disabled={resumePlan.isPending}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 border border-green-300 text-green-600 text-sm rounded hover:bg-green-50',
+                      'disabled:opacity-50 disabled:cursor-not-allowed'
+                    )}
+                    title="Resume - skip completed tasks and continue from where it failed"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {resumePlan.isPending ? 'Resuming...' : 'Resume'}
+                  </button>
+                )}
+                <button
+                  onClick={handleExecute}
+                  disabled={executeMutation.isPending}
+                  className={cn(
+                    'rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm',
+                    'hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                  )}
+                >
+                  {executeMutation.isPending ? 'Re-queuing...' : 'Retry Plan'}
+                </button>
+              </>
             )}
             {plan.status !== 'running' && (
               confirmDelete ? (
@@ -325,6 +340,21 @@ export function PlanDetail() {
           )}
         </div>
       </div>
+
+      {/* Force Stop Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmForceStop}
+        title="Force stop workflow?"
+        description="The workflow will be marked as failed immediately. Running agents will not be interrupted but no new tasks will start."
+        confirmLabel="Force Stop"
+        variant="danger"
+        onConfirm={() => {
+          forceStop.mutate(plan.id);
+          setConfirmForceStop(false);
+        }}
+        onCancel={() => setConfirmForceStop(false)}
+        loading={forceStop.isPending}
+      />
     </div>
   );
 }

@@ -341,6 +341,47 @@ def build_prompt(task: Task, context: dict[str, TaskResult], ctx_dir: Path | Non
     return "\n".join(parts)
 
 
+async def should_skip_task(task_id: str, plan_id: str, client: Any) -> bool:
+    """
+    Check if a task has already been completed successfully.
+
+    Args:
+        task_id: ID of the task to check
+        plan_id: ID of the plan
+        client: DaemonClient instance for fetching logs
+
+    Returns:
+        True if the task was already completed successfully, False otherwise
+    """
+    try:
+        logs_response = await client.get_plan_logs(plan_id)
+        if logs_response.error:
+            logger.warn(f"Failed to fetch logs for resume check: {logs_response.error}")
+            return False
+
+        logs = logs_response.data or []
+
+        # Check for successful task completion indicators:
+        # 1. Logs with level='success' for this task_id
+        # 2. Logs with message starting with 'Task completed' or '✔ finished' for this task_id
+        for log in logs:
+            if log.get('task_id') != task_id:
+                continue
+
+            level = log.get('level')
+            message = log.get('message', '')
+
+            if level == 'success':
+                return True
+            if message.startswith('Task completed') or message.startswith('✔ finished'):
+                return True
+
+        return False
+    except Exception as e:
+        logger.warn(f"Error checking if task should be skipped: {e}")
+        return False
+
+
 async def run_task(
     task: Task,
     context: dict[str, TaskResult],
@@ -361,6 +402,34 @@ async def run_task(
     Returns:
         TaskResult with success status and output
     """
+    # Skip already completed tasks when resuming
+    if client and plan_id and await should_skip_task(task.id, plan_id, client):
+        logger.info(f"↻ Skipping already completed task: {task.id} ({task.name})")
+        if log_callback:
+            log_callback(task.id, "info", f"↻ Skipping already completed task: {task.name}")
+
+        # Load the task's output from context note if available
+        if ctx_dir:
+            note_path = ctx_dir / f'{task.id}.md'
+            if note_path.exists():
+                note_content = note_path.read_text()
+                # Extract the summary section from the note
+                lines = note_content.split('\n')
+                summary_lines = []
+                in_summary = False
+                for line in lines:
+                    if line.startswith('## Summary'):
+                        in_summary = True
+                        continue
+                    if in_summary:
+                        summary_lines.append(line)
+
+                output = '\n'.join(summary_lines).strip()
+                return TaskResult(task_id=task.id, success=True, output=output)
+
+        # If no saved context, still mark as success (task was completed before)
+        return TaskResult(task_id=task.id, success=True, output="")
+
     logger.task_start(task.id, task.name, task.cwd)
 
     # Send initial log message

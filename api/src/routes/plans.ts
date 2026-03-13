@@ -91,13 +91,19 @@ router.post('/', authenticateToken, (req: Request, res: Response) => {
       return res.status(400).json({ data: null, error: 'name and tasks are required' })
     }
 
+    // Sanitize tasks to ensure each task has an id
+    const sanitizedTasks = (tasks || []).map((task: any, index: number) => ({
+      ...task,
+      id: task.id || `task-${index + 1}`,
+    }))
+
     const id = randomUUID()
     const now = new Date().toISOString()
 
     db.prepare(`
       INSERT INTO plans (id, name, tasks, status, project_id, created_at)
       VALUES (?, ?, ?, 'pending', ?, ?)
-    `).run(id, name, JSON.stringify(tasks), project_id ?? null, now)
+    `).run(id, name, JSON.stringify(sanitizedTasks), project_id ?? null, now)
 
     const plan = db
       .prepare('SELECT * FROM plans WHERE id = ?')
@@ -450,28 +456,79 @@ router.post('/:id/execute', authenticateToken, (req: Request, res: Response) => 
 
 // POST /api/plans/:id/force-stop — força plano para 'failed' independente do status atual
 router.post('/:id/force-stop', authenticateToken, (req, res) => {
-  const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id) as any
-  if (!plan) return res.status(404).json({ data: null, error: 'Plan not found' })
-  if (plan.status !== 'running') {
-    return res.status(409).json({ data: null, error: `Plan is not running (status: ${plan.status})` })
+  try {
+    const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id) as any
+    if (!plan) return res.status(404).json({ data: null, error: 'Plan not found' })
+    if (plan.status !== 'running') {
+      return res.status(409).json({ data: null, error: `Plan is not running (status: ${plan.status})` })
+    }
+
+    db.prepare(`
+      UPDATE plans
+      SET status = 'failed',
+          completed_at = datetime('now'),
+          result = 'Manually stopped by user'
+      WHERE id = ?
+    `).run(req.params.id)
+
+    // Adicionar log de parada manual
+    const { v4: uuid } = require('uuid')
+    db.prepare(`
+      INSERT INTO plan_logs (id, plan_id, task_id, level, message, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).run(uuid(), req.params.id, 'system', 'warn', '⛔ Plan manually stopped by user')
+
+    return res.json({ data: { stopped: true }, error: null })
+  } catch (err: any) {
+    console.error('Error force stopping plan:', err)
+    return res.status(500).json({ data: null, error: err.message || 'Failed to force stop plan' })
   }
+})
 
-  db.prepare(`
-    UPDATE plans
-    SET status = 'failed',
-        completed_at = datetime('now'),
-        result = 'Manually stopped by user'
-    WHERE id = ?
-  `).run(req.params.id)
+// POST /api/plans/:id/resume — Resume a failed plan from where it left off
+router.post('/:id/resume', authenticateToken, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
 
-  // Adicionar log de parada manual
-  const { v4: uuid } = require('uuid')
-  db.prepare(`
-    INSERT INTO plan_logs (id, plan_id, task_id, level, message, created_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-  `).run(uuid(), req.params.id, 'system', 'warn', '⛔ Plan manually stopped by user')
+    const plan = db
+      .prepare('SELECT * FROM plans WHERE id = ?')
+      .get(id) as any
 
-  return res.json({ data: { stopped: true }, error: null })
+    if (!plan) {
+      return res.status(404).json({ data: null, error: 'Plan not found' })
+    }
+
+    if (plan.status === 'running') {
+      return res.status(400).json({ data: null, error: 'Plan is already running' })
+    }
+
+    if (plan.status === 'success') {
+      return res.status(400).json({ data: null, error: 'Plan already completed successfully' })
+    }
+
+    // Set status back to pending so daemon picks it up
+    // Keep started_at to maintain execution history
+    // Clear completed_at and result to allow re-execution
+    db.prepare(`
+      UPDATE plans
+      SET status = 'pending',
+          completed_at = NULL,
+          result = NULL
+      WHERE id = ?
+    `).run(id)
+
+    // Add log indicating resume
+    const { v4: uuid } = require('uuid')
+    db.prepare(`
+      INSERT INTO plan_logs (id, plan_id, task_id, level, message, created_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).run(uuid(), id, 'system', 'info', '↻ Plan resumed - will skip completed tasks')
+
+    return res.json({ data: { success: true, message: 'Plan queued for resume' }, error: null })
+  } catch (error) {
+    console.error('Error resuming plan:', error)
+    res.status(500).json({ data: null, error: 'Failed to resume plan' })
+  }
 })
 
 // DELETE /api/plans/:id - Delete a plan
