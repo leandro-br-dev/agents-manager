@@ -447,6 +447,8 @@ function PlanCreateModal({ onClose, prefillData }: PlanCreateModalProps) {
     setCreating(true)
     setCreateError(null)
     try {
+      // Debug: log what's being sent to the API
+      console.log('[PlanModal] Creating plan with data:', JSON.stringify(prefillData, null, 2))
       // Usa a mesma estrutura do import JSON — o plano já tem name + tasks
       const created = await createPlan.mutateAsync({
         name: prefillData.name,

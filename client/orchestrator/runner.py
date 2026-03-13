@@ -48,10 +48,14 @@ STRUCTURED_PATTERNS = [
 
 def extract_structured_output(full_text: str) -> dict | None:
     """
-    Extract the first structured output block found in the agent output.
+    Extract the last structured output block found in the agent output.
 
     Searches for JSON blocks wrapped in <plan>, <review>, or <diagnosis> tags.
     These are used by quick actions to produce structured results for frontend approval.
+
+    Uses the LAST occurrence of each pattern type to avoid capturing template examples
+    from skill definitions (e.g., planner skill contains an example <plan> block before
+    the actual generated plan).
 
     Args:
         full_text: Complete output text from the agent execution
@@ -61,10 +65,13 @@ def extract_structured_output(full_text: str) -> dict | None:
         or None if no structured output found
     """
     for output_type, pattern in STRUCTURED_PATTERNS:
-        match = re.search(pattern, full_text, re.DOTALL)
-        if match:
+        # Find all matches and use the last one (not the first)
+        matches = list(re.finditer(pattern, full_text, re.DOTALL))
+        if matches:
+            # Use the last match — the real generated plan, not template examples
+            last_match = matches[-1]
             try:
-                content = json.loads(match.group(1))
+                content = json.loads(last_match.group(1))
                 return {'type': output_type, 'content': content}
             except json.JSONDecodeError:
                 # Pattern matched but JSON is invalid - continue to next pattern
