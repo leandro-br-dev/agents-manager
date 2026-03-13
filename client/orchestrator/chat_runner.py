@@ -54,16 +54,15 @@ async def run_chat_turn(
         O sdk_session_id (novo ou existente) para persistência
     """
     # Build options for the SDK
-    # Note: workspace_path is used for settings.local.json discovery, but the SDK
-    # doesn't have a "workspace" field. The cwd field is used for working directory
-    # and settings discovery. If workspace_path != cwd, we should use workspace_path
-    # as cwd to ensure settings are loaded correctly.
-    workspace_settings = os.path.join(workspace_path, '.claude', 'settings.local.json')
-    effective_cwd = workspace_path if os.path.exists(workspace_settings) else cwd
-
+    # IMPORTANT: cwd MUST be workspace_path to ensure settings.local.json is discovered.
+    # The SDK walks up from cwd to find .claude/settings.local.json. If we use
+    # env_project_path as cwd, the SDK won't be able to reach the workspace settings.
+    # The env_project_path (passed as 'cwd' parameter) should only be used for context,
+    # not as the SDK's working directory.
     options_kwargs = {
-        "cwd": effective_cwd,
+        "cwd": workspace_path,
         "permission_mode": "acceptEdits",
+        "setting_sources": ["project", "local"],  # Load .claude/settings.local.json from workspace (same as runner.py)
     }
 
     # Unset CLAUDECODE to prevent nested session detection
@@ -86,6 +85,29 @@ async def run_chat_turn(
 
     options_kwargs["stderr"] = stderr_callback
     options_kwargs["extra_args"] = {"debug-to-stderr": True}  # Enable debug mode
+
+    # Detailed logging for authentication diagnostics
+    logger.info(f"[ChatTurn] session_id={session_id}")
+    logger.info(f"[ChatTurn] workspace_path={workspace_path}")
+    logger.info(f"[ChatTurn] cwd={options_kwargs.get('cwd')}")
+    logger.info(f"[ChatTurn] setting_sources={options_kwargs.get('setting_sources')}")
+    logger.info(f"[ChatTurn] sdk_session_id={sdk_session_id}")
+    logger.info(f"[ChatTurn] settings.local.json exists={os.path.exists(os.path.join(workspace_path, '.claude', 'settings.local.json'))}")
+    logger.info(f"[ChatTurn] settings.local.json path={os.path.join(workspace_path, '.claude', 'settings.local.json')}")
+
+    # Log settings.local.json contents (env vars only, no credentials)
+    try:
+        import json
+        settings_path = os.path.join(workspace_path, '.claude', 'settings.local.json')
+        if os.path.exists(settings_path):
+            with open(settings_path) as f:
+                settings_data = json.load(f)
+            env_keys = list(settings_data.get('env', {}).keys())
+            logger.info(f"[ChatTurn] settings env keys={env_keys}")
+        else:
+            logger.warning(f"[ChatTurn] settings.local.json NOT FOUND at {settings_path}")
+    except Exception as e:
+        logger.warning(f"[ChatTurn] Error reading settings: {e}")
 
     options = ClaudeAgentOptions(**options_kwargs)
 

@@ -5,7 +5,7 @@ export function useGetSessions() {
   return useQuery({
     queryKey: ['sessions'],
     queryFn: () => apiFetch<any[]>('/api/sessions'),
-    refetchInterval: 3000,
+    refetchInterval: 10000, // 10 seconds = 6 requests/minute (session list changes infrequently)
   })
 }
 
@@ -14,7 +14,7 @@ export function useGetSession(id: string) {
     queryKey: ['session', id],
     queryFn: () => apiFetch<any>(`/api/sessions/${id}`),
     enabled: !!id,
-    refetchInterval: 2000,
+    refetchInterval: 5000, // 5 seconds = 12 requests/minute (balance between freshness and performance)
   })
 }
 

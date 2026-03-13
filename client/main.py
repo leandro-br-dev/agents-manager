@@ -340,6 +340,12 @@ async def process_chat_session(session: dict, client: object) -> None:
         await on_response('No message received.', None)
         return
 
+    # Detailed logging for session processing
+    logger.info(f"[Session] Processing session id={session.get('id')} name={session.get('name')}")
+    logger.info(f"[Session] project_id={session.get('project_id')} workspace_path={session.get('workspace_path')}")
+    logger.info(f"[Session] environment_id={session.get('environment_id')} env_project_path={session.get('env_project_path')}")
+    logger.info(f"[Session] cwd resolved={cwd}")
+
     try:
         new_sdk_session_id = await run_chat_turn(
             session_id=session_id,
