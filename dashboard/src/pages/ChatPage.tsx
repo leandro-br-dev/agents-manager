@@ -24,8 +24,13 @@ interface PlanData {
 
 function extractAllPlans(content: string): PlanData[] {
   const results: PlanData[] = []
+  // Remove markdown code fences que possam envolver as tags <plan>
+  const normalized = content.replace(/```[\s\S]*?```/g, (block) => {
+    // Mantém o conteúdo interno mas remove os backticks
+    return block.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+  })
   // Usar split para encontrar todas as ocorrências
-  const parts = content.split('<plan>')
+  const parts = normalized.split('<plan>')
   for (let i = 1; i < parts.length; i++) {
     const closing = parts[i].indexOf('</plan>')
     if (closing === -1) continue
