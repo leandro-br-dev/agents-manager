@@ -10,12 +10,46 @@ import { useCreatePlan } from '@/api/plans'
 import { API_BASE_URL, API_TOKEN } from '@/api/client'
 import { useNavigate } from 'react-router'
 
+interface PlanData {
+  name: string
+  summary?: string
+  tasks: Array<{
+    name?: string
+    prompt?: string
+    cwd?: string
+    workspace?: string
+    depends_on?: string[]
+  }>
+}
+
+function extractAllPlans(content: string): PlanData[] {
+  const results: PlanData[] = []
+  // Usar split para encontrar todas as ocorrências
+  const parts = content.split('<plan>')
+  for (let i = 1; i < parts.length; i++) {
+    const closing = parts[i].indexOf('</plan>')
+    if (closing === -1) continue
+    const raw = parts[i].substring(0, closing).trim()
+    try {
+      const parsed = JSON.parse(raw)
+      // Ignora planos de exemplo/template (placeholder)
+      if (parsed.name && parsed.name !== 'Descriptive plan name' && Array.isArray(parsed.tasks)) {
+        results.push(parsed)
+      }
+    } catch {
+      // JSON inválido, ignora
+    }
+  }
+  return results
+}
+
 export default function ChatPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [input, setInput] = useState('')
   const [showPlanModal, setShowPlanModal] = useState(false)
-  const [pendingPlan, setPendingPlan] = useState<any>(null)
+  const [pendingPlan, setPendingPlan] = useState<PlanData | null>(null)
+  const [pendingPlans, setPendingPlans] = useState<PlanData[]>([])
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -42,19 +76,18 @@ export default function ChatPage() {
     setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }, [session?.messages?.length])
 
-  // Detect structured_output in assistant messages
+  // Detect <plan> tags in assistant messages
   useEffect(() => {
     if (!session?.messages) return
     const lastAssistant = [...session.messages]
       .reverse()
       .find((m: any) => m.role === 'assistant')
     if (!lastAssistant) return
-    try {
-      const parsed = JSON.parse(lastAssistant.content)
-      if (parsed.structured_output?.type === 'plan' && !pendingPlan) {
-        setPendingPlan(parsed.structured_output.content)
-      }
-    } catch {}
+    const plans = extractAllPlans(lastAssistant.content)
+    if (plans.length > 0 && !pendingPlan) {
+      setPendingPlan(plans[plans.length - 1]) // default: último
+      setPendingPlans(plans) // todos
+    }
   }, [session?.messages, pendingPlan])
 
   const handleSend = async () => {
@@ -209,27 +242,33 @@ export default function ChatPage() {
                     )}
 
                     {/* Structured output card */}
-                    {structuredOut && (
-                      <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-xs font-semibold text-green-800 capitalize mb-1">
-                          {structuredOut.type} generated
-                        </p>
-                        {structuredOut.type === 'plan' && (
-                          <>
-                            <p className="text-xs text-green-700">
-                              {structuredOut.content?.name} • {structuredOut.content?.tasks?.length} tasks
-                            </p>
-                            <Button
-                              variant="primary" size="sm"
-                              className="mt-2"
-                              onClick={() => { setPendingPlan(structuredOut.content); setShowPlanModal(true) }}
-                            >
-                              Review & Create Workflow
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    {structuredOut && structuredOut.type === 'plan' && (() => {
+                      const plans = extractAllPlans(msg.content)
+                      if (plans.length === 0) return null
+                      const lastPlan = plans[plans.length - 1]
+                      return (
+                        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <p className="text-xs font-semibold text-green-800 capitalize mb-1">
+                            {structuredOut.type} generated
+                          </p>
+                          <p className="text-xs text-green-700">
+                            {lastPlan?.name} • {lastPlan?.tasks?.length || 0} tasks
+                            {plans.length > 1 && ` (${plans.length} plans found)`}
+                          </p>
+                          <Button
+                            variant="primary" size="sm"
+                            className="mt-2"
+                            onClick={() => {
+                              setPendingPlan(lastPlan)
+                              setPendingPlans(plans)
+                              setShowPlanModal(true)
+                            }}
+                          >
+                            Review & Create Workflow
+                          </Button>
+                        </div>
+                      )
+                    })()}
 
                     <p className="text-xs mt-1 opacity-50">
                       {new Date(msg.created_at).toLocaleTimeString()}
@@ -310,8 +349,10 @@ export default function ChatPage() {
       {/* Plan creation from chat */}
       {showPlanModal && pendingPlan && (
         <PlanCreateModal
-          onClose={() => setShowPlanModal(false)}
           prefillData={pendingPlan}
+          allPlans={pendingPlans}
+          onSelectPlan={(p) => setPendingPlan(p)}
+          onClose={() => { setShowPlanModal(false); setPendingPlan(null); setPendingPlans([]) }}
         />
       )}
 
@@ -434,25 +475,32 @@ function NewChatModal({ onClose, onCreate }: { onClose: () => void; onCreate: (i
 
 interface PlanCreateModalProps {
   onClose: () => void
-  prefillData: any
+  prefillData: PlanData
+  allPlans: PlanData[]
+  onSelectPlan: (plan: PlanData) => void
 }
 
-function PlanCreateModal({ onClose, prefillData }: PlanCreateModalProps) {
+function PlanCreateModal({ onClose, prefillData, allPlans, onSelectPlan }: PlanCreateModalProps) {
   const navigate = useNavigate()
   const createPlan = useCreatePlan()
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
   const handleCreateFromPlan = async () => {
+    console.log('[PlanModal] prefillData completo:', JSON.stringify(prefillData, null, 2))
     setCreating(true)
     setCreateError(null)
     try {
-      // Debug: log what's being sent to the API
-      console.log('[PlanModal] Creating plan with data:', JSON.stringify(prefillData, null, 2))
       // Usa a mesma estrutura do import JSON — o plano já tem name + tasks
       const created = await createPlan.mutateAsync({
         name: prefillData.name,
-        tasks: prefillData.tasks,
+        tasks: prefillData.tasks.map(t => ({
+          name: t.name || 'Untitled Task',
+          prompt: t.prompt || '',
+          cwd: t.cwd || '',
+          workspace: t.workspace || '',
+          env_context: undefined,
+        })),
       })
       onClose()
       navigate(`/plans/${created.id}`)
@@ -474,6 +522,26 @@ function PlanCreateModal({ onClose, prefillData }: PlanCreateModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <div className="relative bg-white rounded-lg border border-gray-200 p-6 max-w-3xl w-full mx-4 space-y-4 max-h-[85vh] overflow-y-auto">
+        {allPlans.length > 1 && (
+          <div className="mb-4 flex items-center gap-2">
+            <span className="text-xs text-gray-500">{allPlans.length} plans found:</span>
+            <div className="flex gap-1 flex-wrap">
+              {allPlans.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSelectPlan(p)}
+                  className={`px-2 py-0.5 rounded text-xs border transition-colors ${
+                    p.name === prefillData.name
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-gray-500'
+                  }`}
+                >
+                  {p.name?.slice(0, 30) || `Plan ${i + 1}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="flex-1">
             <h3 className="text-base font-semibold text-gray-900">{prefillData?.name || 'Untitled Plan'}</h3>
