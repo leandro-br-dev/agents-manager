@@ -150,10 +150,24 @@ router.post('/:id/agents', authenticateToken, (req, res) => {
 // DELETE /api/projects/:id/agents — desvincular agente
 router.delete('/:id/agents', authenticateToken, (req, res) => {
   const { workspace_path } = req.body
-  if (!workspace_path) return res.status(400).json({ data: null, error: 'workspace_path required' })
-  db.prepare(
+
+  // Validate that workspace_path is provided
+  if (!workspace_path) {
+    console.error('[DELETE /api/projects/:id/agents] Missing workspace_path in request body')
+    console.error('[DELETE /api/projects/:id/agents] Request body:', req.body)
+    return res.status(400).json({ data: null, error: 'workspace_path required' })
+  }
+
+  // Log the deletion for debugging
+  console.log(`[DELETE /api/projects/:id/agents] Unlinking agent: project_id=${req.params.id}, workspace_path=${workspace_path}`)
+
+  // Ensure both conditions are present to prevent deleting all agents from a project
+  const result = db.prepare(
     'DELETE FROM project_agents WHERE project_id = ? AND workspace_path = ?'
   ).run(req.params.id, workspace_path)
+
+  console.log(`[DELETE /api/projects/:id/agents] Deleted ${result.changes} row(s)`)
+
   return res.json({ data: { unlinked: true }, error: null })
 })
 
