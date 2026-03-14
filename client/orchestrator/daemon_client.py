@@ -632,3 +632,27 @@ class DaemonClient:
         except Exception as e:
             logger.warning(f"Failed to start plan: {e}")
             return {}
+
+    async def get_plan_logs(self, plan_id: str) -> PlanResponse:
+        """
+        Busca logs de um plano.
+
+        GET /api/plans/:id/logs
+
+        Args:
+            plan_id: ID of the plan
+
+        Returns:
+            PlanResponse with data=list[logs] or error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._get,
+                f"/plans/{plan_id}/logs"
+            )
+            return self._handle_response(response)
+        except Exception as e:
+            logger.warning(f"Failed to get plan logs {plan_id}: {e}")
+            return PlanResponse(data=None, error=f"Failed to get plan logs: {e}")

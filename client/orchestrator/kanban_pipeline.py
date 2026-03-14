@@ -84,22 +84,24 @@ async def process_kanban_task(task: dict, client) -> None:
         except Exception:
             project_settings = {}
 
-    logger.info(f"[KanbanPipeline] Processing task: {title} ({task_id})")
+    logger.info(f"[KanbanPipeline] Starting process for task {task_id}")
 
     # Marca como 'planning'
     await client.update_kanban_pipeline(project_id, task_id, pipeline_status="planning")
 
     try:
-        # Encontra o planning agent do projeto
+        # Log cada etapa para diagnóstico
+        logger.info('[KanbanPipeline] Step 1: finding planner workspace...')
         planner_workspace = await find_planner_workspace(project_id, client)
+        logger.info(f'[KanbanPipeline] Planner workspace: {planner_workspace}')
+
         if not planner_workspace:
-            raise ValueError(f"No planner agent found for project {project_id}")
+            raise ValueError(f'No planner agent with role=planner found for project {project_id}. Assign a planner agent to this project first.')
 
-        logger.info(f"[KanbanPipeline] Using planner workspace: {planner_workspace}")
-
-        # Monta o contexto de agentes disponíveis
+        logger.info('[KanbanPipeline] Step 2: fetching agents context...')
         agents_context = await client.get_project_agents_context(project_id)
 
+        logger.info('[KanbanPipeline] Step 3: preparing planning prompt...')
         # Prompt para o planning agent
         prompt = f"""You are processing a task from the project kanban board.
 
@@ -112,6 +114,7 @@ Analyze the task, read the relevant codebase, and generate a precise execution p
 Output the plan using the <plan>...</plan> format as instructed in your planning skill."""
 
         # Executa o planning agent via SDK
+        logger.info('[KanbanPipeline] Step 4: importing SDK and preparing options...')
         from claude_agent_sdk import query, ClaudeCodeOptions
 
         # Get valid SDK fields
@@ -127,7 +130,7 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         opts = ClaudeCodeOptions(**opts_kwargs)
 
         full_response = ""
-        logger.info("[KanbanPipeline] Running planning agent...")
+        logger.info('[KanbanPipeline] Step 5: running planning agent...')
         async for event in query(prompt=prompt, options=opts):
             event_type = type(event).__name__
             if event_type == "AssistantMessage":
@@ -139,15 +142,16 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
                 if result_text:
                     full_response += result_text
 
-        logger.info(f"[KanbanPipeline] Planning agent response length: {len(full_response)}")
+        logger.info(f'[KanbanPipeline] Step 6: planning agent response length: {len(full_response)}')
 
         # Extrai o plano da resposta
+        logger.info('[KanbanPipeline] Step 7: extracting plan from response...')
         plan_data = extract_plan_from_text(full_response)
         if not plan_data:
             raise ValueError("Planning agent did not produce a valid <plan> block")
 
         logger.info(
-            f"[KanbanPipeline] Plan extracted: {plan_data['name']} "
+            f"[KanbanPipeline] Step 8: plan extracted: {plan_data['name']} "
             f"({len(plan_data['tasks'])} tasks)"
         )
 
@@ -161,14 +165,16 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         plan_data["kanban_task_id"] = task_id  # para rastreabilidade
 
         # Cria o workflow
+        logger.info('[KanbanPipeline] Step 9: creating workflow from plan...')
         created_plan = await client.create_plan_from_data(plan_data)
         plan_id = created_plan.get("id")
         if not plan_id:
             raise ValueError("Failed to create workflow from plan")
 
-        logger.info(f"[KanbanPipeline] Workflow created: {plan_id}")
+        logger.info(f'[KanbanPipeline] Step 10: workflow created: {plan_id}')
 
         # Vincula workflow à kanban task
+        logger.info('[KanbanPipeline] Step 11: linking workflow to kanban task...')
         await client.update_kanban_pipeline(
             project_id, task_id, pipeline_status="awaiting_approval", workflow_id=plan_id
         )
@@ -176,19 +182,26 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         # Auto-aprova se configurado
         auto_approve = project_settings.get("auto_approve_workflows", False)
         if auto_approve:
+            logger.info('[KanbanPipeline] Step 12: auto-approving workflow...')
             await client.start_plan_async(plan_id)
             await client.update_kanban_pipeline(project_id, task_id, pipeline_status="running")
             logger.success(
                 f"[KanbanPipeline] Workflow auto-approved and started: {plan_id}"
             )
         else:
-            logger.info(f"[KanbanPipeline] Workflow awaiting manual approval: {plan_id}")
+            logger.info(f'[KanbanPipeline] Step 12: workflow awaiting manual approval: {plan_id}')
 
     except Exception as e:
-        logger.error(f"[KanbanPipeline] Error processing task {task_id}: {e}")
-        await client.update_kanban_pipeline(
-            project_id, task_id, pipeline_status="failed", error_message=str(e)
-        )
+        logger.error(f'[KanbanPipeline] Unhandled error in task {task_id}: {e}', exc_info=True)
+        # Garante que a task não fica presa em 'planning' para sempre
+        try:
+            await client.update_kanban_pipeline(
+                project_id, task_id,
+                pipeline_status="failed",
+                error_message=f'Unhandled error: {str(e)}'
+            )
+        except Exception:
+            pass
 
 
 async def sync_workflow_status(client) -> None:
@@ -301,9 +314,21 @@ async def _run_kanban_task(task: dict, client) -> None:
     """
     task_id = task["id"]
     if task_id in _running_kanban_tasks:
+        logger.debug(f'[KanbanPipeline] Task {task_id} already running, skipping')
         return
     _running_kanban_tasks.add(task_id)
     try:
         await process_kanban_task(task, client)
+    except Exception as e:
+        logger.error(f'[KanbanPipeline] Unhandled error in task {task_id}: {e}', exc_info=True)
+        # Garante que a task não fica presa em 'planning' para sempre
+        try:
+            await client.update_kanban_pipeline(
+                task['project_id'], task_id,
+                pipeline_status='failed',
+                error_message=f'Unhandled error: {str(e)}'
+            )
+        except Exception:
+            pass
     finally:
         _running_kanban_tasks.discard(task_id)
