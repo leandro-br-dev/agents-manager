@@ -19,7 +19,13 @@ def extract_plan_from_text(text: str) -> dict | None:
     Returns:
         Dicionário do plano se encontrado e válido, None caso contrário
     """
-    parts = text.split("<plan>")
+    import re
+
+    # Normaliza: remove code fences que possam envolver <plan>
+    # Ex: ```\n<plan>...\n</plan>\n``` → <plan>...\n</plan>
+    normalized = re.sub(r'```[\w]*\s*(<plan>[\s\S]*?</plan>)\s*```', r'\1', text)
+
+    parts = normalized.split("<plan>")
     for i in range(1, len(parts)):
         closing = parts[i].find("</plan>")
         if closing == -1:
@@ -27,15 +33,24 @@ def extract_plan_from_text(text: str) -> dict | None:
         raw = parts[i][:closing].strip()
         try:
             parsed = json.loads(raw)
-            if (
-                parsed.get("name")
-                and parsed["name"] != "Descriptive plan name"
-                and isinstance(parsed.get("tasks"), list)
-                and len(parsed["tasks"]) > 0
-            ):
-                return parsed
-        except (json.JSONDecodeError, KeyError):
+            name = parsed.get('name', '')
+            tasks = parsed.get('tasks', [])
+
+            if name == 'Descriptive plan name':
+                logger.info('[KanbanPipeline] Found template placeholder plan, skipping')
+                continue
+
+            if not name or not isinstance(tasks, list) or len(tasks) == 0:
+                logger.info(f'[KanbanPipeline] Plan missing name or tasks: name={name}, tasks_count={len(tasks)}')
+                continue
+
+            logger.info(f'[KanbanPipeline] Valid plan found: {name} ({len(tasks)} tasks)')
+            return parsed
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.info(f'[KanbanPipeline] JSON parse failed: {e}, raw[:100]={raw[:100]}')
             continue
+
+    logger.warning(f'[KanbanPipeline] No valid <plan> found. Total <plan> occurrences: {text.count("<plan>")}')
     return None
 
 
@@ -122,7 +137,7 @@ async def process_kanban_task(task: dict, client) -> None:
 
         logger.info('[KanbanPipeline] Step 3: preparing planning prompt...')
         # Prompt para o planning agent
-        prompt = f"""You are processing a task from the project kanban board.
+        base_prompt = f"""You are processing a task from the project kanban board.
 
 Task Title: {title}
 Task Description: {description}
@@ -131,6 +146,16 @@ Task Description: {description}
 
 Analyze the task, read the relevant codebase, and generate a precise execution plan.
 Output the plan using the <plan>...</plan> format as instructed in your planning skill."""
+
+        # Lê o SKILL.md do planner como fallback
+        skill_path = os.path.join(planner_workspace, '.claude', 'skills', 'planning', 'SKILL.md')
+        skill_content = ''
+        if os.path.exists(skill_path):
+            with open(skill_path) as f:
+                skill_content = f.read()
+            logger.info(f'[KanbanPipeline] Loaded planning skill ({len(skill_content)} chars)')
+        else:
+            logger.warning(f'[KanbanPipeline] Planning skill not found at {skill_path}')
 
         # Executa o planning agent via SDK
         logger.info('[KanbanPipeline] Step 4: importing SDK and preparing options...')
@@ -146,6 +171,13 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         }
         # Filtra apenas campos válidos
         opts_kwargs = {k: v for k, v in opts_kwargs.items() if k in valid_fields}
+
+        # Adiciona skill ao prompt se setting_sources não disponível
+        prompt = base_prompt
+        if skill_content and 'setting_sources' not in valid_fields:
+            logger.info('[KanbanPipeline] setting_sources unavailable, injecting skill into prompt')
+            prompt = f"{skill_content}\n\n---\n\n{base_prompt}"
+
         opts = ClaudeAgentOptions(**opts_kwargs)
 
         full_response = ""
@@ -162,6 +194,19 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
                     full_response += result_text
 
         logger.info(f'[KanbanPipeline] Step 6: planning agent response length: {len(full_response)}')
+
+        # Salva resposta para diagnóstico
+        import os
+        log_path = f'/tmp/kanban_agent_response_{task_id[:8]}.txt'
+        with open(log_path, 'w') as f:
+            f.write(full_response)
+        logger.info(f'[KanbanPipeline] Response saved to {log_path}')
+
+        # Log dos primeiros 500 chars e dos últimos 500 chars
+        logger.info(f'[KanbanPipeline] Response start: {repr(full_response[:500])}')
+        logger.info(f'[KanbanPipeline] Response end: {repr(full_response[-500:])}')
+        logger.info(f'[KanbanPipeline] Has <plan>: {"<plan>" in full_response}')
+        logger.info(f'[KanbanPipeline] Has </plan>: {"</plan>" in full_response}')
 
         # Extrai o plano da resposta
         logger.info('[KanbanPipeline] Step 7: extracting plan from response...')
