@@ -36,6 +36,8 @@ export default function KanbanPage() {
   });
 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
 
   // Auto-select project if only one exists
   if (projects.length === 1 && !selectedProjectId) {
@@ -105,6 +107,9 @@ export default function KanbanPage() {
       .filter((task) => task.column === columnId)
       .sort((a, b) => a.order_index - b.order_index);
   };
+
+  const getTaskColumn = (taskId: string) =>
+    tasks.find(t => t.id === taskId)?.column ?? 'backlog';
 
   if (!selectedProjectId && projects.length > 1) {
     return (
@@ -185,43 +190,72 @@ export default function KanbanPage() {
           action={<Button variant="primary" onClick={() => handleOpenCreate()}>Add Task</Button>}
         />
       ) : (
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 p-4 h-full overflow-y-auto">
           {COLUMNS.map((column) => {
             const columnTasks = getTasksByColumn(column.id);
             return (
-              <div key={column.id} className="flex-shrink-0 w-80">
-                <div className="bg-gray-50 rounded-lg border border-gray-200 p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-900">{column.label}</h3>
-                    <span className="text-xs font-mono text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-200">
-                      {columnTasks.length}
-                    </span>
-                  </div>
+              <div key={column.id} className="flex flex-col min-h-0 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="px-3 py-2 border-b border-gray-200 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900">{column.label}</h3>
+                  <span className="text-xs font-mono text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-200">
+                    {columnTasks.length}
+                  </span>
+                </div>
 
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenCreate(column.id as KanbanTask['column'])}
-                    className="w-full mb-3"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add task
-                  </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleOpenCreate(column.id as KanbanTask['column'])}
+                  className="w-full m-2"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add task
+                </Button>
 
-                  <div className="space-y-2">
-                    {columnTasks.map((task) => (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        onEdit={() => handleOpenEdit(task)}
-                        onMoveLeft={() => handleMoveTask(task, 'left')}
-                        onMoveRight={() => handleMoveTask(task, 'right')}
-                        onDelete={() => setDeleteConfirm(task.id)}
-                        canMoveLeft={column.id !== 'backlog'}
-                        canMoveRight={column.id !== 'done'}
-                      />
-                    ))}
-                  </div>
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    setDragOverColumn(column.id);
+                  }}
+                  onDragLeave={(e) => {
+                    // Só limpa se saiu da coluna de fato (não entrou em filho)
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setDragOverColumn(null);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggedTaskId && column.id !== getTaskColumn(draggedTaskId)) {
+                      updateTask.mutate({ id: draggedTaskId, column: column.id as KanbanTask['column'] });
+                    }
+                    setDraggedTaskId(null);
+                    setDragOverColumn(null);
+                  }}
+                  className={`flex-1 overflow-y-auto p-2 space-y-2 transition-colors rounded-b-lg ${
+                    dragOverColumn === column.id ? 'bg-blue-50 ring-2 ring-inset ring-blue-200' : ''
+                  }`}
+                >
+                  {columnTasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onEdit={() => handleOpenEdit(task)}
+                      onMoveLeft={() => handleMoveTask(task, 'left')}
+                      onMoveRight={() => handleMoveTask(task, 'right')}
+                      onDelete={() => setDeleteConfirm(task.id)}
+                      canMoveLeft={column.id !== 'backlog'}
+                      canMoveRight={column.id !== 'done'}
+                      onDragStart={(taskId) => {
+                        setDraggedTaskId(taskId);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedTaskId(null);
+                        setDragOverColumn(null);
+                      }}
+                      isDragging={draggedTaskId === task.id}
+                    />
+                  ))}
                 </div>
               </div>
             );
@@ -352,6 +386,9 @@ interface TaskCardProps {
   onDelete: () => void;
   canMoveLeft: boolean;
   canMoveRight: boolean;
+  onDragStart: (taskId: string) => void;
+  onDragEnd: () => void;
+  isDragging: boolean;
 }
 
 function TaskCard({
@@ -362,9 +399,22 @@ function TaskCard({
   onDelete,
   canMoveLeft,
   canMoveRight,
+  onDragStart,
+  onDragEnd,
+  isDragging,
 }: TaskCardProps) {
   return (
-    <div className="group bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-colors">
+    <div
+      draggable
+      onDragStart={(e) => {
+        onDragStart(task.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={onDragEnd}
+      className={`group bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-all cursor-grab active:cursor-grabbing ${
+        isDragging ? 'opacity-50 scale-95' : ''
+      }`}
+    >
       <div className="flex items-start justify-between gap-2 mb-2">
         <h4 className="text-sm font-semibold text-gray-900 flex-1">{task.title}</h4>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
