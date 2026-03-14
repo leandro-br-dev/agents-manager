@@ -307,6 +307,9 @@ def build_prompt(task: Task, context: dict[str, TaskResult], ctx_dir: Path | Non
         task: Task to build prompt for
         context: Results from previous tasks (used as fallback if no ctx_dir)
         ctx_dir: Context directory with saved dependency notes (takes precedence)
+
+    Returns:
+        The formatted prompt string
     """
     parts: list[str] = []
 
@@ -339,6 +342,69 @@ def build_prompt(task: Task, context: dict[str, TaskResult], ctx_dir: Path | Non
     parts.append(task.prompt)
 
     return "\n".join(parts)
+
+
+async def build_agent_context(
+    task: Task,
+    client: Any | None,
+    plan_id: str | None,
+) -> str:
+    """
+    Build agent context for planner agents.
+
+    If the task's workspace is a planner agent, fetch the list of available
+    agents for the project and format it for injection into the prompt.
+
+    Args:
+        task: The task being executed
+        client: Optional DaemonClient instance
+        plan_id: Optional plan ID (needed to fetch project_id)
+
+    Returns:
+        Formatted agents context string, or empty string if not applicable
+    """
+    if not client or not plan_id:
+        return ""
+
+    # Check if this task uses a planner agent
+    # We check both the workspace path and use a simple heuristic
+    workspace = task.workspace or ""
+    is_planner = "planner" in workspace.lower()
+
+    if not is_planner:
+        return ""
+
+    # Get project_id from the plan
+    try:
+        # We need to fetch plan details to get project_id
+        # This requires the client to have a get_plan method or similar
+        # For now, we'll check if there's a way to get it from task metadata
+        if hasattr(task, 'project_id') and task.project_id:
+            project_id = task.project_id
+        else:
+            # Try to get plan details from client
+            # Note: This requires the client to expose a get_plan method
+            # If it doesn't exist, we'll return empty string
+            if not hasattr(client, 'get_plan'):
+                logger.debug("Cannot fetch project_id: client doesn't have get_plan method")
+                return ""
+
+            plan_resp = await client.get_plan(plan_id)
+            if plan_resp.error or not plan_resp.data:
+                logger.debug(f"Cannot fetch project_id: {plan_resp.error}")
+                return ""
+
+            project_id = plan_resp.data.get("project_id")
+            if not project_id:
+                return ""
+
+        # Fetch agents context for the project
+        agents_context = await client.get_project_agents_context(project_id)
+        return agents_context
+
+    except Exception as e:
+        logger.warning(f"Failed to build agent context: {e}")
+        return ""
 
 
 async def should_skip_task(task_id: str, plan_id: str, client: Any) -> bool:
@@ -468,6 +534,13 @@ async def run_task(
     )
 
     prompt = build_prompt(task, context, ctx_dir)
+
+    # Inject agents context for planner agents
+    agent_context = await build_agent_context(task, client, plan_id)
+    if agent_context:
+        # Prepend agents context to the prompt with a separator
+        prompt = f"{agent_context}\n\n---\n\n{prompt}"
+        logger.debug(f"[{task.id}] Injected agents context for planner agent")
 
     final_result: ResultMessage | None = None
     logs_buffer: list[dict] = []

@@ -34,6 +34,8 @@ async def run_chat_turn(
     on_sdk_session: Callable[[str], Awaitable[None]] | None = None,
     on_response: Callable[[str, dict | None], Awaitable[None]] | None = None,
     log_callback: Callable[[list], Awaitable[None]] | None = None,
+    client: Any | None = None,  # DaemonClient instance
+    project_id: str | None = None,  # Project ID for fetching agents context
 ) -> str | None:
     """
     Executa um turno da conversa.
@@ -49,6 +51,8 @@ async def run_chat_turn(
         on_sdk_session: Callback chamado quando novo sdk_session_id é gerado
         on_response: Callback chamado quando resposta completa é recebida
         log_callback: Callback para streaming de logs em tempo real
+        client: Optional DaemonClient instance for fetching agents context
+        project_id: Optional project ID for fetching agents context
 
     Returns:
         O sdk_session_id (novo ou existente) para persistência
@@ -115,8 +119,19 @@ async def run_chat_turn(
     final_result = None
     new_sdk_session_id = None
 
+    # Inject agents context for planner agents
+    full_prompt = message
+    if client and project_id and 'planner' in workspace_path.lower():
+        try:
+            agents_context = await client.get_project_agents_context(project_id)
+            if agents_context:
+                full_prompt = f"{agents_context}\n\n---\n\n{message}"
+                logger.info(f"[ChatTurn] Injected agents context for planner agent")
+        except Exception as e:
+            logger.warning(f"[ChatTurn] Failed to fetch agents context: {e}")
+
     try:
-        async for message_obj in query(prompt=message, options=options):
+        async for message_obj in query(prompt=full_prompt, options=options):
             msg_type = getattr(message_obj, 'type', None) or type(message_obj).__name__
 
             if msg_type in ('assistant', 'AssistantMessage') or hasattr(message_obj, 'content'):

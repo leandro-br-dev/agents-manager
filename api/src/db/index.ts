@@ -205,6 +205,32 @@ export function initDatabase() {
     // Table already exists - ignore error
   }
 
+  // Create kanban_tasks table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kanban_tasks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      column TEXT NOT NULL DEFAULT 'backlog' CHECK(column IN ('backlog','active','in_progress','done')),
+      priority INTEGER NOT NULL DEFAULT 3 CHECK(priority BETWEEN 1 AND 5),
+      order_index INTEGER NOT NULL DEFAULT 0,
+      workflow_id TEXT REFERENCES plans(id) ON DELETE SET NULL,
+      result_status TEXT CHECK(result_status IN ('success','partial','needs_rework')),
+      result_notes TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `)
+
+  // Create workspace_roles table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workspace_roles (
+      workspace_path TEXT PRIMARY KEY,
+      role TEXT NOT NULL DEFAULT 'coder' CHECK(role IN ('planner','coder','reviewer','tester','debugger','devops','generic'))
+    );
+  `)
+
   console.log('Database initialized successfully')
 }
 

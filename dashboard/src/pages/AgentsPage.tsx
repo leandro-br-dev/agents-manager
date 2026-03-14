@@ -1,9 +1,19 @@
 import { useSearchParams } from 'react-router-dom'
-import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, useGetAgentTemplates, useGetNativeSkills, useInstallNativeSkill, useImportCustomSkill, type Workspace } from '../api/workspaces'
+import { useGetWorkspaces, useGetWorkspace, useCreateWorkspace, useDeleteWorkspace, useSaveClaudeMd, useSaveSettings, useGetSkill, useInstallSkill, useDeleteSkill, useGetAgent, useSaveAgent, useDeleteAgent, useRenameAgent, useGetWorkspaceEnvironments, useLinkEnvironment, useUnlinkEnvironment, useGetAgentTemplates, useGetNativeSkills, useInstallNativeSkill, useImportCustomSkill, useUpdateWorkspaceRole, type Workspace, type WorkspaceRole } from '../api/workspaces'
 import { useGetProjects, useGetAllEnvironments } from '../api/projects'
 import { useState, useRef, useMemo } from 'react'
 import { Trash2, Plus, FolderOpen, FileText, Settings as SettingsIcon, Code, Users, Edit3, Pencil, Link2, X, Upload } from 'lucide-react'
 import { PageHeader, Button, Card, Input, Select, ConfirmDialog, EmptyState } from '@/components'
+
+const ROLE_COLORS: Record<WorkspaceRole, { bg: string; text: string; border: string; label: string }> = {
+  planner: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', label: 'Planner' },
+  coder: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', label: 'Coder' },
+  reviewer: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', label: 'Reviewer' },
+  tester: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', label: 'Tester' },
+  debugger: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', label: 'Debugger' },
+  devops: { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200', label: 'DevOps' },
+  generic: { bg: 'bg-gray-50', text: 'text-gray-500', border: 'border-gray-200', label: 'Generic' },
+}
 
 export default function AgentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -25,6 +35,7 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
   const [newBaseUrl, setNewBaseUrl] = useState('')
   const [newProjectId, setNewProjectId] = useState('')
   const [templateId, setTemplateId] = useState('generic')
+  const [newRole, setNewRole] = useState<WorkspaceRole>('generic')
   const createWorkspace = useCreateWorkspace()
 
   const canCreate = newName.trim().length > 0 && newProjectId.length > 0
@@ -39,6 +50,7 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
         anthropic_base_url: newBaseUrl || undefined,
         project_id: newProjectId,
         template_id: templateId,
+        role: newRole,
       },
       {
         onSuccess: () => {
@@ -46,6 +58,7 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
           setNewBaseUrl('')
           setNewProjectId('')
           setTemplateId('generic')
+          setNewRole('generic')
           setShowNewForm(false)
         },
       }
@@ -119,6 +132,20 @@ function WorkspaceList({ onSelectWorkspace }: { onSelectWorkspace: (id: string) 
                   <option key={t.id} value={t.id}>{t.label} — {t.description}</option>
                 ))}
               </Select>
+              <Select
+                label="Role"
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as WorkspaceRole)}
+                className="col-span-2"
+              >
+                <option value="planner">Planner — analisa e gera planos de execução</option>
+                <option value="coder">Coder — implementa código</option>
+                <option value="reviewer">Reviewer — revisa e valida implementações</option>
+                <option value="tester">Tester — escreve e executa testes</option>
+                <option value="debugger">Debugger — diagnostica e corrige bugs</option>
+                <option value="devops">DevOps — infra, deploy, CI/CD</option>
+                <option value="generic">Generic — uso geral</option>
+              </Select>
               {templateId && templates.find(t => t.id === templateId) && (
                 <div className="col-span-2 rounded bg-gray-50 border border-gray-200 px-3 py-2">
                   <p className="text-xs text-gray-500 font-medium">
@@ -172,12 +199,15 @@ function WorkspaceCard({
   workspace,
   onClick,
 }: {
-  workspace: any
+  workspace: Workspace
   onClick: () => void
 }) {
   const deleteWorkspace = useDeleteWorkspace()
+  const updateWorkspaceRole = useUpdateWorkspaceRole()
   const [showConfirm, setShowConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isEditingRole, setIsEditingRole] = useState(false)
+  const [role, setRole] = useState<WorkspaceRole>(workspace.role || 'generic')
 
   const handleDelete = () => {
     setIsDeleting(true)
@@ -188,6 +218,18 @@ function WorkspaceCard({
       },
       onError: () => setIsDeleting(false)
     })
+  }
+
+  const handleRoleUpdate = (newRole: WorkspaceRole) => {
+    updateWorkspaceRole.mutate(
+      { id: workspace.id, role: newRole },
+      {
+        onSuccess: () => {
+          setRole(newRole)
+          setIsEditingRole(false)
+        },
+      }
+    )
   }
 
   const getBaseUrlBadge = () => {
@@ -241,6 +283,32 @@ function WorkspaceCard({
           </p>
 
           <div className="flex flex-wrap gap-2">
+            {isEditingRole ? (
+              <Select
+                value={role}
+                onChange={(e) => handleRoleUpdate(e.target.value as WorkspaceRole)}
+                className="h-7 text-xs py-0.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <option value="planner">Planner</option>
+                <option value="coder">Coder</option>
+                <option value="reviewer">Reviewer</option>
+                <option value="tester">Tester</option>
+                <option value="debugger">Debugger</option>
+                <option value="devops">DevOps</option>
+                <option value="generic">Generic</option>
+              </Select>
+            ) : (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsEditingRole(true)
+                }}
+                className={`text-xs px-2 py-0.5 rounded border font-medium cursor-pointer hover:opacity-80 transition-opacity ${ROLE_COLORS[role]?.bg} ${ROLE_COLORS[role]?.text} ${ROLE_COLORS[role]?.border}`}
+              >
+                {ROLE_COLORS[role]?.label || 'Generic'}
+              </span>
+            )}
             <span className={`px-2 py-1 rounded-full text-xs font-medium ${badge.color}`}>
               {badge.label}
             </span>

@@ -192,6 +192,26 @@ class DaemonClient:
         except Exception as e:
             return PlanResponse(data=None, error=f"Request failed: {e}")
 
+    def get_plan(self, plan_id: str) -> PlanResponse:
+        """
+        Fetch details of a specific plan.
+
+        GET /api/plans/:id
+
+        Args:
+            plan_id: ID of the plan to fetch
+
+        Returns:
+            PlanResponse with data=plan_details or error
+        """
+        try:
+            response = self._client.get(f"/plans/{plan_id}")
+            return self._handle_response(response)
+        except httpx.HTTPError as e:
+            return PlanResponse(data=None, error=f"HTTP error: {e}")
+        except Exception as e:
+            return PlanResponse(data=None, error=f"Request failed: {e}")
+
     def request_approval(
         self,
         plan_id: str,
@@ -308,6 +328,59 @@ class DaemonClient:
             return PlanResponse(data=None, error=f"HTTP error: {e}")
         except Exception as e:
             return PlanResponse(data=None, error=f"Request failed: {e}")
+
+    async def get_project_agents_context(self, project_id: str) -> str:
+        """
+        Return a formatted string with available agents for a project.
+
+        This context is injected into planner agents so they can reference
+        the correct agents when creating task assignments.
+
+        GET /api/projects/:id/agents-context
+
+        Args:
+            project_id: ID of the project
+
+        Returns:
+            Formatted string with agent information, or empty string on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._client.get,
+                f"/projects/{project_id}/agents-context",
+            )
+            handled = self._handle_response(response)
+
+            if handled.error:
+                logger.warning(f"Failed to fetch agents context: {handled.error}")
+                return ""
+
+            agents = handled.data
+            if not agents:
+                return ""
+
+            lines = ["## Available Agents for this Project\n"]
+            for agent in agents:
+                role = agent.get("role", "generic")
+                name = agent.get("name", "unknown")
+                workspace = agent.get("workspace_path", "")
+                lines.append(f"- **{name}** (role: `{role}`)")
+                lines.append(f"  workspace: `{workspace}`")
+
+            lines.append("")
+            lines.append(
+                "When creating task assignments, use the workspace paths above. "
+                "Match task type to agent role: coders for implementation, "
+                "reviewers for validation, testers for test suites, etc."
+            )
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.warning(f"Error fetching agents context: {e}")
+            return ""
 
     # Chat session methods
 

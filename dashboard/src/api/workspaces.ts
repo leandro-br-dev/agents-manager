@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient, apiFetch } from './client'
 
+export type WorkspaceRole = 'planner' | 'coder' | 'reviewer' | 'tester' | 'debugger' | 'devops' | 'generic'
+
 export type Workspace = {
   id: string
   name: string
@@ -10,6 +12,7 @@ export type Workspace = {
   hasClaude: boolean
   baseUrl: string | null
   project_id: string | null
+  role: WorkspaceRole
 }
 
 export type WorkspaceDetail = {
@@ -51,7 +54,7 @@ export function useGetWorkspace(id: string) {
 export function useCreateWorkspace() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { name: string; project_path?: string; anthropic_base_url?: string; project_id?: string; template_id?: string }) =>
+    mutationFn: (data: { name: string; project_path?: string; anthropic_base_url?: string; project_id?: string; template_id?: string; role?: WorkspaceRole }) =>
       apiClient.post<{ id: string; path: string }>('/api/workspaces', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: workspaceKeys.list() })
@@ -75,6 +78,17 @@ export function useDeleteWorkspace() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: workspaceKeys.list() })
       qc.invalidateQueries({ queryKey: ['projects'] })
+    },
+  })
+}
+
+export function useUpdateWorkspaceRole() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, role }: { id: string; role: WorkspaceRole }) =>
+      apiClient.put<{ updated: boolean }>(`/api/workspaces/${id}`, { role }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: workspaceKeys.list() })
     },
   })
 }

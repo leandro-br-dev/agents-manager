@@ -356,6 +356,8 @@ async def process_chat_session(session: dict, client: object) -> None:
             on_sdk_session=on_sdk_session,
             on_response=on_response,
             log_callback=log_callback,
+            client=client,  # Pass DaemonClient for fetching agents context
+            project_id=session.get('project_id'),  # Pass project_id for fetching agents context
         )
 
         logger.info(f'Session {session_id[:8]} completed')

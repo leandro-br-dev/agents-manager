@@ -9,6 +9,7 @@ import projectsRouter from './routes/projects.js'
 import nativeSkillsRouter from './routes/nativeSkills.js'
 import quickActionsRouter from './routes/quickActions.js'
 import chatSessionsRouter from './routes/chatSessions.js'
+import kanbanRouter from './routes/kanban.js'
 import { db } from './db/index.js'
 
 const app = express()
@@ -78,6 +79,9 @@ app.use('/api/quick-actions', quickActionsRouter)
 
 // Chat sessions routes
 app.use('/api/sessions', chatSessionsRouter)
+
+// Kanban routes
+app.use('/api/kanban', kanbanRouter)
 
 // Error handling
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

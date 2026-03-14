@@ -8,6 +8,7 @@ import ProjectsPage from './pages/ProjectsPage'
 import SettingsPage from './pages/SettingsPage'
 import ApprovalsPage from './pages/ApprovalsPage'
 import ChatPage from './pages/ChatPage'
+import KanbanPage from './pages/KanbanPage'
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
       {
         path: 'projects',
         element: <ProjectsPage />,
+      },
+      {
+        path: 'kanban',
+        element: <KanbanPage />,
       },
       {
         path: 'settings',

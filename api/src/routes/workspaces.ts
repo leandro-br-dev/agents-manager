@@ -30,6 +30,7 @@ interface WorkspaceInfo {
   baseUrl: string | null
   type: 'agent' | 'env-agent' | 'legacy'
   project_id: string | null
+  role: string
 }
 
 function readJsonSafe(filePath: string): any {
@@ -71,6 +72,11 @@ function listAllWorkspaces(): WorkspaceInfo[] {
           'SELECT project_id FROM project_agents WHERE workspace_path = ? LIMIT 1'
         ).get(fullPath) as any
 
+        // Fetch role from workspace_roles table
+        const roleRow = db.prepare(
+          'SELECT role FROM workspace_roles WHERE workspace_path = ? LIMIT 1'
+        ).get(fullPath) as any
+
         results.push({
           id: Buffer.from(fullPath).toString('base64url'),
           name: agentDir.name,
@@ -80,7 +86,8 @@ function listAllWorkspaces(): WorkspaceInfo[] {
           hasClaude: fs.existsSync(claudeMdPath),
           baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
           type: 'agent',
-          project_id: projectLink?.project_id ?? null
+          project_id: projectLink?.project_id ?? null,
+          role: roleRow?.role ?? 'coder'
         })
       }
     }
@@ -101,6 +108,11 @@ function listAllWorkspaces(): WorkspaceInfo[] {
           'SELECT project_id FROM project_agents WHERE workspace_path = ? LIMIT 1'
         ).get(agentCoderPath) as any
 
+        // Fetch role from workspace_roles table
+        const roleRow = db.prepare(
+          'SELECT role FROM workspace_roles WHERE workspace_path = ? LIMIT 1'
+        ).get(agentCoderPath) as any
+
         results.push({
           id: Buffer.from(agentCoderPath).toString('base64url'),
           name: `${projectDir.name}/${envDir.name}`,
@@ -110,7 +122,8 @@ function listAllWorkspaces(): WorkspaceInfo[] {
           hasClaude: fs.existsSync(claudeMdPath),
           baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
           type: 'env-agent',
-          project_id: projectLink?.project_id ?? null
+          project_id: projectLink?.project_id ?? null,
+          role: roleRow?.role ?? 'coder'
         })
       }
     }
@@ -127,6 +140,11 @@ function listAllWorkspaces(): WorkspaceInfo[] {
         'SELECT project_id FROM project_agents WHERE workspace_path = ? LIMIT 1'
       ).get(legacyAgentCoderPath) as any
 
+      // Fetch role from workspace_roles table
+      const roleRow = db.prepare(
+        'SELECT role FROM workspace_roles WHERE workspace_path = ? LIMIT 1'
+      ).get(legacyAgentCoderPath) as any
+
       results.push({
         id: Buffer.from(legacyAgentCoderPath).toString('base64url'),
         name: projectDir.name,
@@ -136,7 +154,8 @@ function listAllWorkspaces(): WorkspaceInfo[] {
         hasClaude: fs.existsSync(claudeMdPath),
         baseUrl: settings?.env?.ANTHROPIC_BASE_URL ?? null,
         type: 'legacy',
-        project_id: projectLink?.project_id ?? null
+        project_id: projectLink?.project_id ?? null,
+        role: roleRow?.role ?? 'coder'
       })
     }
   }
@@ -234,6 +253,11 @@ router.get('/:id', authenticateToken, (req, res) => {
     WHERE ae.workspace_path = ?
   `).all(coderPath) as any[]
 
+  // Fetch role from workspace_roles table
+  const roleRow = db.prepare(
+    'SELECT role FROM workspace_roles WHERE workspace_path = ? LIMIT 1'
+  ).get(coderPath) as any
+
   return res.json({
     data: {
       id: id,
@@ -246,6 +270,7 @@ router.get('/:id', authenticateToken, (req, res) => {
       agents,
       environments: linkedEnvs,
       project_id: workspace.project_id,
+      role: roleRow?.role ?? 'coder',
     },
     error: null
   })
@@ -396,6 +421,32 @@ router.put('/:id/settings', authenticateToken, (req, res) => {
     JSON.stringify(settings, null, 2)
   )
   return res.json({ data: { saved: true }, error: null })
+})
+
+// PUT /api/workspaces/:id/role — atualizar role do workspace
+router.put('/:id/role', authenticateToken, (req, res) => {
+  const id = getIdParam(req.params)
+  const workspace = listAllWorkspaces().find(ws => ws.id === id)
+
+  if (!workspace) {
+    return res.status(404).json({ data: null, error: 'Workspace not found' })
+  }
+
+  const { role } = req.body
+  if (!role) {
+    return res.status(400).json({ data: null, error: 'role is required' })
+  }
+
+  const validRoles = ['planner', 'coder', 'reviewer', 'tester', 'debugger', 'devops', 'generic']
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ data: null, error: `role must be one of: ${validRoles.join(', ')}` })
+  }
+
+  db.prepare(
+    'INSERT OR REPLACE INTO workspace_roles (workspace_path, role) VALUES (?, ?)'
+  ).run(workspace.path, role)
+
+  return res.json({ data: { role }, error: null })
 })
 
 // DELETE /api/workspaces/:id — remover workspace

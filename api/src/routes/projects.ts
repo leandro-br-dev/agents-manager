@@ -157,4 +157,53 @@ router.delete('/:id/agents', authenticateToken, (req, res) => {
   return res.json({ data: { unlinked: true }, error: null })
 })
 
+// GET /api/projects/:id/agents-context — retorna agentes disponíveis para injeção no contexto do planejador
+router.get('/:id/agents-context', authenticateToken, (req, res) => {
+  try {
+    // Fetch agents linked to the project with their roles
+    const agents = db.prepare(`
+      SELECT
+        pa.workspace_path,
+        wr.role,
+        pa.created_at
+      FROM project_agents pa
+      LEFT JOIN workspace_roles wr ON wr.workspace_path = pa.workspace_path
+      WHERE pa.project_id = ?
+      ORDER BY pa.created_at ASC
+    `).all(req.params.id) as any[]
+
+    // Format each agent for the planner context
+    const formattedAgents = agents.map((agent) => {
+      const workspacePath = agent.workspace_path
+      const role = agent.role || 'generic'
+
+      // Extract name from workspace path
+      // Expected format: /root/projects/agents-manager/projects/{project}/agents/{agent-name}/
+      const pathParts = workspacePath.split(path.sep).filter(Boolean)
+      let name = 'unknown'
+
+      // Try to extract agent name from path structure
+      if (pathParts.length >= 5 && pathParts[3] === 'agents') {
+        // Structure: .../projects/{project}/agents/{agent-name}
+        name = pathParts[4]
+      } else if (pathParts.length >= 4) {
+        // Fallback: use last directory component
+        name = pathParts[pathParts.length - 1]
+      }
+
+      return {
+        name,
+        role,
+        workspace_path: workspacePath,
+        cwd: null, // CWD will be set by the task/environment configuration
+      }
+    })
+
+    return res.json({ data: formattedAgents, error: null })
+  } catch (e: any) {
+    console.error('Error fetching agents context:', e)
+    return res.status(500).json({ data: null, error: e.message })
+  }
+})
+
 export default router
