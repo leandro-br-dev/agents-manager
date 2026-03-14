@@ -92,3 +92,8 @@ def debug(text: str) -> None:
 def warning(text: str) -> None:
     """Alias for warn() for compatibility."""
     warn(text)
+
+
+def success(text: str) -> None:
+    """Success messages with green checkmark."""
+    print(f"{GREEN}[{_ts()}] ✔ {text}{RESET}")

@@ -195,7 +195,7 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
             logger.info(f'[KanbanPipeline] Step 12: workflow awaiting manual approval: {plan_id}')
 
     except Exception as e:
-        logger.error(f'[KanbanPipeline] Unhandled error in task {task_id}: {e}', exc_info=True)
+        logger.error(f'[KanbanPipeline] Unhandled error in task {task_id}: {type(e).__name__}: {e}')
         # Garante que a task não fica presa em 'planning' para sempre
         try:
             await client.update_kanban_pipeline(
@@ -320,7 +320,7 @@ async def _run_kanban_task(task: dict, client) -> None:
     try:
         await process_kanban_task(task, client)
     except Exception as e:
-        logger.error(f'[KanbanPipeline] Unhandled error in task {task_id}: {e}', exc_info=True)
+        logger.error(f'[KanbanPipeline] Unhandled error in task {task_id}: {type(e).__name__}: {e}')
         # Garante que a task não fica presa em 'planning' para sempre
         try:
             await client.update_kanban_pipeline(
