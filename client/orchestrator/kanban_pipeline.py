@@ -134,10 +134,10 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
 
         # Executa o planning agent via SDK
         logger.info('[KanbanPipeline] Step 4: importing SDK and preparing options...')
-        from claude_agent_sdk import query, ClaudeCodeOptions
+        from claude_agent_sdk import query, ClaudeAgentOptions
 
         # Get valid SDK fields
-        valid_fields = set(inspect.signature(ClaudeCodeOptions.__init__).parameters.keys()) - {"self"}
+        valid_fields = set(inspect.signature(ClaudeAgentOptions.__init__).parameters.keys()) - {"self"}
 
         opts_kwargs = {
             "cwd": planner_workspace,
@@ -146,7 +146,7 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         }
         # Filtra apenas campos válidos
         opts_kwargs = {k: v for k, v in opts_kwargs.items() if k in valid_fields}
-        opts = ClaudeCodeOptions(**opts_kwargs)
+        opts = ClaudeAgentOptions(**opts_kwargs)
 
         full_response = ""
         logger.info('[KanbanPipeline] Step 5: running planning agent...')
