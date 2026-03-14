@@ -51,7 +51,11 @@ async def find_planner_workspace(project_id: str, client) -> str | None:
         Caminho do workspace do planner ou None se não encontrado
     """
     try:
-        response = await client._get(f"/api/projects/{project_id}/agents-context")
+        url = f"/projects/{project_id}/agents-context"
+        logger.info(f'[KanbanPipeline] Calling: {url}')
+        response = await client._get(url)
+        logger.info(f'[KanbanPipeline] Raw response type: {type(response).__name__}')
+        logger.info(f'[KanbanPipeline] Raw response: {str(response)[:300] if response else "None"}')
 
         # A API pode retornar {"data": [...]} ou diretamente [...]
         if isinstance(response, dict):
