@@ -94,3 +94,12 @@ export function useDeleteKanbanTask(projectId: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban', projectId] }),
   });
 }
+
+export function useUpdateKanbanPipeline(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, data }: { taskId: string; data: { pipeline_status?: string; workflow_id?: string | null; error_message?: string } }) =>
+      apiClient.patch<KanbanTask>(`/api/kanban/${projectId}/${taskId}/pipeline`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban', projectId] }),
+  });
+}

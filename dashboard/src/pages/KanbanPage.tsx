@@ -8,6 +8,7 @@ import {
   useCreateKanbanTask,
   useUpdateKanbanTask,
   useDeleteKanbanTask,
+  useUpdateKanbanPipeline,
   COLUMNS,
   PRIORITY_LABELS,
   PRIORITY_COLORS,
@@ -26,6 +27,7 @@ export default function KanbanPage() {
   const createTask = useCreateKanbanTask(selectedProjectId);
   const updateTask = useUpdateKanbanTask(selectedProjectId);
   const deleteTask = useDeleteKanbanTask(selectedProjectId);
+  const updatePipeline = useUpdateKanbanPipeline(selectedProjectId);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<KanbanTask | null>(null);
@@ -256,11 +258,13 @@ export default function KanbanPage() {
                       }}
                       isDragging={draggedTaskId === task.id}
                       onRetryPipeline={(taskId) => {
-                        updateTask.mutate({
-                          id: taskId,
-                          pipeline_status: 'idle',
-                          workflow_id: null,
-                          error_message: ''
+                        updatePipeline.mutate({
+                          taskId,
+                          data: {
+                            pipeline_status: 'idle',
+                            workflow_id: null,
+                            error_message: ''
+                          }
                         });
                       }}
                     />

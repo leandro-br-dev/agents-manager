@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import os
+import re
 
 from orchestrator import logger
 
@@ -19,8 +21,6 @@ def extract_plan_from_text(text: str) -> dict | None:
     Returns:
         Dicionário do plano se encontrado e válido, None caso contrário
     """
-    import re
-
     # Normaliza: remove code fences que possam envolver <plan>
     # Ex: ```\n<plan>...\n</plan>\n``` → <plan>...\n</plan>
     normalized = re.sub(r'```[\w]*\s*(<plan>[\s\S]*?</plan>)\s*```', r'\1', text)
@@ -196,7 +196,6 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         logger.info(f'[KanbanPipeline] Step 6: planning agent response length: {len(full_response)}')
 
         # Salva resposta para diagnóstico
-        import os
         log_path = f'/tmp/kanban_agent_response_{task_id[:8]}.txt'
         with open(log_path, 'w') as f:
             f.write(full_response)
