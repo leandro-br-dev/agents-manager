@@ -360,7 +360,15 @@ class DaemonClient:
                 logger.warning(f"Failed to fetch agents context: {handled.error}")
                 return ""
 
-            agents = handled.data
+            # A API pode retornar {"data": [...]} ou diretamente [...]
+            data = handled.data
+            if isinstance(data, dict):
+                agents = data.get('data') or []
+            elif isinstance(data, list):
+                agents = data
+            else:
+                agents = []
+
             if not agents:
                 return ""
 

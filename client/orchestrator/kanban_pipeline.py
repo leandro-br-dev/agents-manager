@@ -51,20 +51,32 @@ async def find_planner_workspace(project_id: str, client) -> str | None:
         Caminho do workspace do planner ou None se não encontrado
     """
     try:
-        agents = await client._get(f"/api/projects/{project_id}/agents-context")
+        response = await client._get(f"/api/projects/{project_id}/agents-context")
+
+        # A API pode retornar {"data": [...]} ou diretamente [...]
+        if isinstance(response, dict):
+            agents = response.get('data') or []
+        elif isinstance(response, list):
+            agents = response
+        else:
+            agents = []
+
         if not agents:
             logger.warning(f'[KanbanPipeline] No agents returned for project {project_id}')
             return None
 
-        logger.info(f'[KanbanPipeline] Agents for project: {[(a.get("name"), a.get("role"), a.get("workspace_path")) for a in agents]}')
+        logger.info(f'[KanbanPipeline] Agents for project: {[(a.get("name"), a.get("role")) for a in agents]}')
+
         planners = [a for a in agents if a.get('role') == 'planner']
         if not planners:
-            logger.warning(f'[KanbanPipeline] No planner agent found among: {[a.get("name") for a in agents]}')
+            logger.warning(f'[KanbanPipeline] No planner among agents: {[a.get("name") for a in agents]}')
             return None
 
-        return planners[0].get('workspace_path')
+        workspace = planners[0].get('workspace_path')
+        logger.info(f'[KanbanPipeline] Found planner workspace: {workspace}')
+        return workspace
     except Exception as e:
-        logger.warning(f'Could not find planner workspace: {e}')
+        logger.warning(f'Could not find planner workspace: {type(e).__name__}: {e}')
         return None
 
 
