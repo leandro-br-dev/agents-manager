@@ -51,18 +51,21 @@ async def find_planner_workspace(project_id: str, client) -> str | None:
         Caminho do workspace do planner ou None se não encontrado
     """
     try:
-        raw_agents = await client._get(f"/api/projects/{project_id}/agents-context")
-        handled = client._handle_response(raw_agents)
-        if handled.error:
+        agents = await client._get(f"/api/projects/{project_id}/agents-context")
+        if not agents:
+            logger.warning(f'[KanbanPipeline] No agents returned for project {project_id}')
             return None
 
-        agents = handled.data or []
-        planners = [a for a in agents if a.get("role") == "planner"]
-        if planners:
-            return planners[0].get("workspace_path")
+        logger.info(f'[KanbanPipeline] Agents for project: {[(a.get("name"), a.get("role"), a.get("workspace_path")) for a in agents]}')
+        planners = [a for a in agents if a.get('role') == 'planner']
+        if not planners:
+            logger.warning(f'[KanbanPipeline] No planner agent found among: {[a.get("name") for a in agents]}')
+            return None
+
+        return planners[0].get('workspace_path')
     except Exception as e:
-        logger.warning(f"Could not find planner workspace: {e}")
-    return None
+        logger.warning(f'Could not find planner workspace: {e}')
+        return None
 
 
 async def process_kanban_task(task: dict, client) -> None:
@@ -223,9 +226,9 @@ async def sync_workflow_status(client) -> None:
 
             # Busca tasks com pipeline 'running' ou 'awaiting_approval'
             try:
-                raw_tasks = await client._get(f"/kanban/{project_id}")
-                handled = client._handle_response(raw_tasks)
-                tasks = handled.data if not handled.error else []
+                tasks = await client._get(f"/kanban/{project_id}")
+                if not isinstance(tasks, list):
+                    continue
             except Exception as e:
                 logger.warning(f"Failed to fetch kanban tasks for project {project_id}: {e}")
                 continue
@@ -239,13 +242,10 @@ async def sync_workflow_status(client) -> None:
             for task in active_tasks:
                 workflow_id = task["workflow_id"]
                 try:
-                    raw_plan = await client._get(f"/plans/{workflow_id}")
-                    handled_plan = client._handle_response(raw_plan)
-
-                    if handled_plan.error or not handled_plan.data:
+                    plan = await client._get(f"/plans/{workflow_id}")
+                    if not isinstance(plan, dict):
                         continue
 
-                    plan = handled_plan.data
                     plan_status = plan.get("status")
                     task_id = task["id"]
 

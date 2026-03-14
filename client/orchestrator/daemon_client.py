@@ -466,43 +466,71 @@ class DaemonClient:
 
     # Kanban pipeline methods
 
-    def _patch(self, path: str, data: dict[str, Any]) -> httpx.Response:
+    async def _patch(self, path: str, data: dict[str, Any]) -> dict | None:
         """
-        Internal PATCH request method.
+        Internal PATCH request method (async).
 
         Args:
             path: API path (e.g., /kanban/:projectId/:taskId/pipeline)
             data: Request body
 
         Returns:
-            HTTP response object
+            Parsed JSON response data, or None on error
         """
-        return self._client.patch(path, json=data)
+        import asyncio
 
-    def _post(self, path: str, data: dict[str, Any]) -> httpx.Response:
+        try:
+            response = await asyncio.to_thread(self._client.patch, path, json=data)
+            handled = self._handle_response(response)
+            return None if handled.error else handled.data
+        except Exception as e:
+            logger.warning(f"PATCH {path} failed: {e}")
+            return None
+
+    async def _post(self, path: str, data: dict[str, Any] | None = None) -> dict | list | None:
         """
-        Internal POST request method.
+        Internal POST request method (async).
 
         Args:
             path: API path (e.g., /plans)
             data: Request body
 
         Returns:
-            HTTP response object
+            Parsed JSON response data, or None on error
         """
-        return self._client.post(path, json=data)
+        import asyncio
 
-    def _get(self, path: str) -> httpx.Response:
+        try:
+            response = await asyncio.to_thread(
+                self._client.post,
+                path,
+                json=data or {}
+            )
+            handled = self._handle_response(response)
+            return None if handled.error else handled.data
+        except Exception as e:
+            logger.warning(f"POST {path} failed: {e}")
+            return None
+
+    async def _get(self, path: str) -> dict | list | None:
         """
-        Internal GET request method.
+        Internal GET request method (async).
 
         Args:
             path: API path (e.g., /projects)
 
         Returns:
-            HTTP response object
+            Parsed JSON response data, or None on error
         """
-        return self._client.get(path)
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(self._client.get, path)
+            handled = self._handle_response(response)
+            return None if handled.error else handled.data
+        except Exception as e:
+            logger.warning(f"GET {path} failed: {e}")
+            return None
 
     async def get_pending_kanban_tasks(self, project_id: str) -> list:
         """
@@ -516,15 +544,9 @@ class DaemonClient:
         Returns:
             List of kanban tasks or empty list on error
         """
-        import asyncio
-
         try:
-            response = await asyncio.to_thread(
-                self._get,
-                f"/kanban/{project_id}/pending-pipeline"
-            )
-            handled = self._handle_response(response)
-            return handled.data if not handled.error else []
+            data = await self._get(f"/kanban/{project_id}/pending-pipeline")
+            return data if isinstance(data, list) else []
         except Exception as e:
             logger.warning(f"Failed to get pending kanban tasks: {e}")
             return []
@@ -538,12 +560,9 @@ class DaemonClient:
         Returns:
             List of projects or empty list on error
         """
-        import asyncio
-
         try:
-            response = await asyncio.to_thread(self._get, "/projects")
-            handled = self._handle_response(response)
-            return handled.data if not handled.error else []
+            data = await self._get("/projects")
+            return data if isinstance(data, list) else []
         except Exception as e:
             logger.warning(f"Failed to get projects: {e}")
             return []
@@ -567,16 +586,9 @@ class DaemonClient:
         Returns:
             Updated task data or empty dict on error
         """
-        import asyncio
-
         try:
-            response = await asyncio.to_thread(
-                self._patch,
-                f"/kanban/{project_id}/{task_id}/pipeline",
-                kwargs
-            )
-            handled = self._handle_response(response)
-            return handled.data if not handled.error else {}
+            data = await self._patch(f"/kanban/{project_id}/{task_id}/pipeline", kwargs)
+            return data if isinstance(data, dict) else {}
         except Exception as e:
             logger.warning(f"Failed to update kanban pipeline: {e}")
             return {}
@@ -593,16 +605,9 @@ class DaemonClient:
         Returns:
             Created plan data or empty dict on error
         """
-        import asyncio
-
         try:
-            response = await asyncio.to_thread(
-                self._post,
-                "/plans",
-                plan_data
-            )
-            handled = self._handle_response(response)
-            return handled.data if not handled.error else {}
+            data = await self._post("/plans", plan_data)
+            return data if isinstance(data, dict) else {}
         except Exception as e:
             logger.warning(f"Failed to create plan: {e}")
             return {}
@@ -619,16 +624,9 @@ class DaemonClient:
         Returns:
             Updated plan data or empty dict on error
         """
-        import asyncio
-
         try:
-            response = await asyncio.to_thread(
-                self._post,
-                f"/plans/{plan_id}/start",
-                {"client_id": self.client_id}
-            )
-            handled = self._handle_response(response)
-            return handled.data if not handled.error else {}
+            data = await self._post(f"/plans/{plan_id}/start", {"client_id": self.client_id})
+            return data if isinstance(data, dict) else {}
         except Exception as e:
             logger.warning(f"Failed to start plan: {e}")
             return {}
@@ -645,14 +643,9 @@ class DaemonClient:
         Returns:
             PlanResponse with data=list[logs] or error
         """
-        import asyncio
-
         try:
-            response = await asyncio.to_thread(
-                self._get,
-                f"/plans/{plan_id}/logs"
-            )
-            return self._handle_response(response)
+            data = await self._get(f"/plans/{plan_id}/logs")
+            return PlanResponse(data=data, error=None)
         except Exception as e:
             logger.warning(f"Failed to get plan logs {plan_id}: {e}")
             return PlanResponse(data=None, error=f"Failed to get plan logs: {e}")
