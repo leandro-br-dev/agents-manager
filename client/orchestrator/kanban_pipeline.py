@@ -11,12 +11,13 @@ import re
 from orchestrator import logger
 
 
-def extract_plan_from_text(text: str) -> dict | None:
+def extract_plan_from_text(text: str, fallback_name: str = '') -> dict | None:
     """
     Extrai JSON de plano entre tags <plan>...</plan>.
 
     Args:
         text: Texto que pode conter um plano em formato JSON
+        fallback_name: Nome a usar se o plano não tiver campo 'name'
 
     Returns:
         Dicionário do plano se encontrado e válido, None caso contrário
@@ -37,21 +38,77 @@ def extract_plan_from_text(text: str) -> dict | None:
             tasks = parsed.get('tasks', [])
 
             if name == 'Descriptive plan name':
-                logger.info('[KanbanPipeline] Found template placeholder plan, skipping')
+                logger.info('[KanbanPipeline] Skipping template placeholder plan')
                 continue
 
-            if not name or not isinstance(tasks, list) or len(tasks) == 0:
-                logger.info(f'[KanbanPipeline] Plan missing name or tasks: name={name}, tasks_count={len(tasks)}')
+            if not isinstance(tasks, list) or len(tasks) == 0:
+                logger.info(f'[KanbanPipeline] Plan has no tasks, skipping')
                 continue
 
-            logger.info(f'[KanbanPipeline] Valid plan found: {name} ({len(tasks)} tasks)')
+            # Aceita plano sem nome — usa fallback
+            if not name and fallback_name:
+                parsed['name'] = fallback_name
+                logger.info(f'[KanbanPipeline] Plan has no name, using fallback: {fallback_name}')
+
+            logger.info(f'[KanbanPipeline] Valid plan found: "{parsed.get("name")}" ({len(tasks)} tasks)')
             return parsed
         except (json.JSONDecodeError, KeyError) as e:
-            logger.info(f'[KanbanPipeline] JSON parse failed: {e}, raw[:100]={raw[:100]}')
+            logger.info(f'[KanbanPipeline] JSON parse failed: {type(e).__name__}: {e}')
             continue
 
-    logger.warning(f'[KanbanPipeline] No valid <plan> found. Total <plan> occurrences: {text.count("<plan>")}')
+    logger.warning(f'[KanbanPipeline] No valid <plan> found. <plan> count: {text.count("<plan>")}')
     return None
+
+
+def normalize_plan_tasks(plan_data: dict) -> dict:
+    """
+    Normaliza o schema das tasks para o formato esperado pelo runner.
+
+    Args:
+        plan_data: Dicionário do plano com tasks em schema variável
+
+    Returns:
+        Dicionário do plano com tasks normalizadas
+    """
+    normalized_tasks = []
+    for i, task in enumerate(plan_data.get('tasks', [])):
+        # Normaliza campos com nomes alternativos
+        cwd = (
+            task.get('cwd') or
+            task.get('workingDirectory') or
+            task.get('working_directory') or
+            ''
+        )
+
+        # workspace pode vir em task.workspace ou task.agent.workspace
+        workspace = task.get('workspace') or ''
+        if not workspace and isinstance(task.get('agent'), dict):
+            workspace = task['agent'].get('workspace', '')
+
+        # depends_on pode vir como dependencies
+        depends_on = (
+            task.get('depends_on') or
+            task.get('dependencies') or
+            []
+        )
+
+        # Garante que depends_on é lista de strings
+        if isinstance(depends_on, list):
+            depends_on = [str(d) for d in depends_on]
+
+        normalized_tasks.append({
+            'id': task.get('id') or f'task-{i+1}',
+            'name': task.get('name') or task.get('title') or f'Task {i+1}',
+            'prompt': task.get('prompt') or task.get('description') or task.get('instructions') or '',
+            'cwd': cwd,
+            'workspace': workspace,
+            'tools': task.get('tools') or ['Read', 'Write', 'Edit', 'Bash', 'Glob'],
+            'permission_mode': task.get('permission_mode') or 'acceptEdits',
+            'depends_on': depends_on,
+        })
+
+    plan_data['tasks'] = normalized_tasks
+    return plan_data
 
 
 async def find_planner_workspace(project_id: str, client) -> str | None:
@@ -209,9 +266,13 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
 
         # Extrai o plano da resposta
         logger.info('[KanbanPipeline] Step 7: extracting plan from response...')
-        plan_data = extract_plan_from_text(full_response)
+        plan_data = extract_plan_from_text(full_response, fallback_name=title)
         if not plan_data:
             raise ValueError("Planning agent did not produce a valid <plan> block")
+
+        # Normaliza schema das tasks
+        plan_data = normalize_plan_tasks(plan_data)
+        logger.info(f'[KanbanPipeline] Tasks after normalization: {[(t["id"], t["name"][:30]) for t in plan_data["tasks"]]}')
 
         logger.info(
             f"[KanbanPipeline] Step 8: plan extracted: {plan_data['name']} "
