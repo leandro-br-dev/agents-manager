@@ -12,6 +12,11 @@ export interface KanbanTask {
   workflow_id: string | null;
   result_status: 'success' | 'partial' | 'needs_rework' | null;
   result_notes: string;
+  pipeline_status: 'idle' | 'planning' | 'awaiting_approval' | 'running' | 'done' | 'failed';
+  planning_started_at: string | null;
+  error_message: string;
+  workflow_status?: string;
+  workflow_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +48,15 @@ export const RESULT_STATUS_COLORS: Record<string, string> = {
   success: 'bg-green-100 text-green-700 border-green-200',
   partial: 'bg-amber-100 text-amber-700 border-amber-200',
   needs_rework: 'bg-red-100 text-red-700 border-red-200',
+};
+
+export const PIPELINE_STATUS_CONFIG: Record<string, { label: string; className: string; animated?: boolean }> = {
+  idle:               { label: '', className: '' },
+  planning:           { label: '🤔 Planning...', className: 'text-purple-600', animated: true },
+  awaiting_approval:  { label: '⏳ Awaiting approval', className: 'text-amber-600' },
+  running:            { label: '⚡ Running', className: 'text-blue-600', animated: true },
+  done:               { label: '✓ Done', className: 'text-green-600' },
+  failed:             { label: '✗ Failed', className: 'text-red-600' },
 };
 
 export function useGetKanbanTasks(projectId: string) {

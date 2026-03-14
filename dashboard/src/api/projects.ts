@@ -13,6 +13,12 @@ export type Environment = {
   created_at: string
 }
 
+export type ProjectSettings = {
+  auto_approve_workflows: boolean
+  planning_agent_workspace?: string
+  max_concurrent_active_tasks?: number
+}
+
 export type Project = {
   id: string
   name: string
@@ -20,6 +26,7 @@ export type Project = {
   created_at: string
   environments: Environment[]
   agent_paths?: string[]
+  settings: ProjectSettings
 }
 
 export function useGetProjects() {
@@ -42,6 +49,15 @@ export function useDeleteProject() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch(`/api/projects/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
+  })
+}
+
+export function useUpdateProject() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }: Partial<Project> & { id: string }) =>
+      apiFetch<Project>(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['projects'] }),
   })
 }

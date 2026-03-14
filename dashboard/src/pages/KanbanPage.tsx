@@ -12,6 +12,7 @@ import {
   PRIORITY_LABELS,
   PRIORITY_COLORS,
   RESULT_STATUS_COLORS,
+  PIPELINE_STATUS_CONFIG,
   type KanbanTask,
 } from '@/api/kanban';
 
@@ -254,6 +255,14 @@ export default function KanbanPage() {
                         setDragOverColumn(null);
                       }}
                       isDragging={draggedTaskId === task.id}
+                      onRetryPipeline={(taskId) => {
+                        updateTask.mutate({
+                          id: taskId,
+                          pipeline_status: 'idle',
+                          workflow_id: null,
+                          error_message: ''
+                        });
+                      }}
                     />
                   ))}
                 </div>
@@ -389,6 +398,7 @@ interface TaskCardProps {
   onDragStart: (taskId: string) => void;
   onDragEnd: () => void;
   isDragging: boolean;
+  onRetryPipeline: (taskId: string) => void;
 }
 
 function TaskCard({
@@ -402,6 +412,7 @@ function TaskCard({
   onDragStart,
   onDragEnd,
   isDragging,
+  onRetryPipeline,
 }: TaskCardProps) {
   return (
     <div
@@ -474,12 +485,46 @@ function TaskCard({
           <Link
             to={`/plans/${task.workflow_id}`}
             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
+            onClick={(e) => e.stopPropagation()}
           >
             <Link2 className="h-3 w-3" />
-            Workflow
+            Workflow {task.workflow_name ? `(${task.workflow_name})` : ''}
           </Link>
         )}
       </div>
+
+      {/* Pipeline status */}
+      {task.pipeline_status && task.pipeline_status !== 'idle' && (() => {
+        const cfg = PIPELINE_STATUS_CONFIG[task.pipeline_status];
+        if (!cfg || !cfg.label) return null;
+        return (
+          <p className={`text-xs font-medium mt-2 ${
+            cfg.animated ? 'animate-pulse' : ''
+          } ${cfg.className}`}>
+            {cfg.label}
+          </p>
+        );
+      })()}
+
+      {/* Error message */}
+      {task.pipeline_status === 'failed' && task.error_message && (
+        <p className="text-xs text-red-500 mt-1 truncate" title={task.error_message}>
+          {task.error_message}
+        </p>
+      )}
+
+      {/* Retry button for failed pipelines */}
+      {task.pipeline_status === 'failed' && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetryPipeline(task.id);
+          }}
+          className="text-xs text-red-600 hover:text-red-800 mt-1 underline"
+        >
+          ↺ Retry pipeline
+        </button>
+      )}
     </div>
   );
 }

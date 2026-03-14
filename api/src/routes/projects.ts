@@ -16,6 +16,7 @@ router.get('/', authenticateToken, (req, res) => {
     const agents = db.prepare('SELECT workspace_path FROM project_agents WHERE project_id = ?').all(p.id) as any[]
     return {
       ...p,
+      settings: JSON.parse(p.settings || '{}'),
       environments,
       agent_paths: agents.map(a => a.workspace_path)
     }
@@ -25,17 +26,19 @@ router.get('/', authenticateToken, (req, res) => {
 
 // POST /api/projects
 router.post('/', authenticateToken, (req, res) => {
-  const { name, description } = req.body
+  const { name, description, settings } = req.body
   if (!name) return res.status(400).json({ data: null, error: 'name is required' })
   const id = uuid()
-  db.prepare('INSERT INTO projects (id, name, description) VALUES (?, ?, ?)').run(id, name, description ?? null)
-  return res.status(201).json({ data: { id, name, description }, error: null })
+  const settingsJson = JSON.stringify(settings || {})
+  db.prepare('INSERT INTO projects (id, name, description, settings) VALUES (?, ?, ?, ?)').run(id, name, description ?? null, settingsJson)
+  return res.status(201).json({ data: { id, name, description, settings: settings || {} }, error: null })
 })
 
 // GET /api/projects/:id
 router.get('/:id', authenticateToken, (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
   if (!project) return res.status(404).json({ data: null, error: 'Not found' })
+  project.settings = JSON.parse(project.settings || '{}')
   project.environments = db.prepare('SELECT * FROM environments WHERE project_id = ? ORDER BY created_at ASC').all(project.id)
   const agents = db.prepare('SELECT workspace_path FROM project_agents WHERE project_id = ?').all(project.id) as any[]
   project.agent_paths = agents.map(a => a.workspace_path)
@@ -46,6 +49,27 @@ router.get('/:id', authenticateToken, (req, res) => {
 router.delete('/:id', authenticateToken, (req, res) => {
   db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id)
   return res.json({ data: { deleted: true }, error: null })
+})
+
+// PUT /api/projects/:id
+router.put('/:id', authenticateToken, (req, res) => {
+  try {
+    const { name, description, settings } = req.body
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
+    if (!project) return res.status(404).json({ data: null, error: 'Project not found' })
+
+    const currentSettings = JSON.parse(project.settings || '{}')
+    const newSettings = settings ? { ...currentSettings, ...settings } : currentSettings
+
+    db.prepare('UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description), settings = ? WHERE id = ?')
+      .run(name, description, JSON.stringify(newSettings), req.params.id)
+
+    const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
+    updated.settings = JSON.parse(updated.settings || '{}')
+    return res.json({ data: updated, error: null })
+  } catch (err: any) {
+    return res.status(500).json({ data: null, error: err.message })
+  }
 })
 
 // POST /api/projects/:id/environments

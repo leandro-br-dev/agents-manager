@@ -8,9 +8,13 @@ const router = Router()
 // GET /api/kanban/:projectId — listar todas as tasks do projeto
 router.get('/:projectId', authenticateToken, (req: Request, res: Response) => {
   try {
-    const tasks = db.prepare(
-      'SELECT * FROM kanban_tasks WHERE project_id = ? ORDER BY column, priority ASC, order_index ASC'
-    ).all(req.params.projectId)
+    const tasks = db.prepare(`
+      SELECT kt.*, p.status as workflow_status, p.name as workflow_name
+      FROM kanban_tasks kt
+      LEFT JOIN plans p ON p.id = kt.workflow_id
+      WHERE kt.project_id = ?
+      ORDER BY kt.column, kt.priority ASC, kt.order_index ASC
+    `).all(req.params.projectId)
     res.json({ data: tasks, error: null })
   } catch (err: any) {
     console.error('Error fetching kanban tasks:', err)
@@ -85,6 +89,54 @@ router.delete('/:projectId/:taskId', authenticateToken, (req: Request, res: Resp
     res.json({ data: { success: true }, error: null })
   } catch (err: any) {
     console.error('Error deleting kanban task:', err)
+    res.status(500).json({ data: null, error: err.message })
+  }
+})
+
+// GET /api/kanban/:projectId/pending-pipeline — retorna tasks ativas sem workflow
+router.get('/:projectId/pending-pipeline', authenticateToken, (req: Request, res: Response) => {
+  try {
+    const tasks = db.prepare(`
+      SELECT kt.*, p.settings as project_settings
+      FROM kanban_tasks kt
+      JOIN projects p ON p.id = kt.project_id
+      WHERE kt.project_id = ?
+        AND kt.column = 'active'
+        AND (kt.workflow_id IS NULL OR kt.workflow_id = '')
+        AND kt.pipeline_status = 'idle'
+      ORDER BY kt.priority ASC, kt.created_at ASC
+      LIMIT 5
+    `).all(req.params.projectId)
+
+    const result = tasks.map((t: any) => ({
+      ...t,
+      project_settings: JSON.parse(t.project_settings || '{}')
+    }))
+    res.json({ data: result, error: null })
+  } catch (err: any) {
+    console.error('Error fetching pending pipeline tasks:', err)
+    res.status(500).json({ data: null, error: err.message })
+  }
+})
+
+// PATCH /api/kanban/:projectId/:taskId/pipeline — atualiza pipeline_status
+router.patch('/:projectId/:taskId/pipeline', authenticateToken, (req: Request, res: Response) => {
+  try {
+    const { pipeline_status, workflow_id, error_message } = req.body
+    db.prepare(`
+      UPDATE kanban_tasks SET
+        pipeline_status = COALESCE(?, pipeline_status),
+        workflow_id = COALESCE(?, workflow_id),
+        error_message = COALESCE(?, error_message),
+        planning_started_at = CASE WHEN ? = 'planning' THEN datetime('now') ELSE planning_started_at END,
+        updated_at = datetime('now')
+      WHERE id = ? AND project_id = ?
+    `).run(pipeline_status, workflow_id, error_message, pipeline_status, req.params.taskId, req.params.projectId)
+
+    const updated = db.prepare('SELECT * FROM kanban_tasks WHERE id = ?').get(req.params.taskId)
+    res.json({ data: updated, error: null })
+  } catch (err: any) {
+    console.error('Error updating pipeline status:', err)
     res.status(500).json({ data: null, error: err.message })
   }
 })

@@ -463,3 +463,172 @@ class DaemonClient:
             return PlanResponse(data=None, error=f"HTTP error: {e}")
         except Exception as e:
             return PlanResponse(data=None, error=f"Request failed: {e}")
+
+    # Kanban pipeline methods
+
+    def _patch(self, path: str, data: dict[str, Any]) -> httpx.Response:
+        """
+        Internal PATCH request method.
+
+        Args:
+            path: API path (e.g., /kanban/:projectId/:taskId/pipeline)
+            data: Request body
+
+        Returns:
+            HTTP response object
+        """
+        return self._client.patch(path, json=data)
+
+    def _post(self, path: str, data: dict[str, Any]) -> httpx.Response:
+        """
+        Internal POST request method.
+
+        Args:
+            path: API path (e.g., /plans)
+            data: Request body
+
+        Returns:
+            HTTP response object
+        """
+        return self._client.post(path, json=data)
+
+    def _get(self, path: str) -> httpx.Response:
+        """
+        Internal GET request method.
+
+        Args:
+            path: API path (e.g., /projects)
+
+        Returns:
+            HTTP response object
+        """
+        return self._client.get(path)
+
+    async def get_pending_kanban_tasks(self, project_id: str) -> list:
+        """
+        Busca kanban tasks ativas sem workflow vinculado.
+
+        GET /api/kanban/:projectId/pending-pipeline
+
+        Args:
+            project_id: ID of the project
+
+        Returns:
+            List of kanban tasks or empty list on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._get,
+                f"/kanban/{project_id}/pending-pipeline"
+            )
+            handled = self._handle_response(response)
+            return handled.data if not handled.error else []
+        except Exception as e:
+            logger.warning(f"Failed to get pending kanban tasks: {e}")
+            return []
+
+    async def get_all_projects(self) -> list:
+        """
+        Retorna todos os projetos com settings.
+
+        GET /api/projects
+
+        Returns:
+            List of projects or empty list on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(self._get, "/projects")
+            handled = self._handle_response(response)
+            return handled.data if not handled.error else []
+        except Exception as e:
+            logger.warning(f"Failed to get projects: {e}")
+            return []
+
+    async def update_kanban_pipeline(
+        self,
+        project_id: str,
+        task_id: str,
+        **kwargs
+    ) -> dict:
+        """
+        Atualiza pipeline_status de uma kanban task.
+
+        PATCH /api/kanban/:projectId/:taskId/pipeline
+
+        Args:
+            project_id: ID of the project
+            task_id: ID of the kanban task
+            **kwargs: Fields to update (pipeline_status, workflow_id, error_message)
+
+        Returns:
+            Updated task data or empty dict on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._patch,
+                f"/kanban/{project_id}/{task_id}/pipeline",
+                kwargs
+            )
+            handled = self._handle_response(response)
+            return handled.data if not handled.error else {}
+        except Exception as e:
+            logger.warning(f"Failed to update kanban pipeline: {e}")
+            return {}
+
+    async def create_plan_from_data(self, plan_data: dict) -> dict:
+        """
+        Cria um workflow a partir de um dict de plano.
+
+        POST /api/plans
+
+        Args:
+            plan_data: Plan data with name, tasks, project_id, etc.
+
+        Returns:
+            Created plan data or empty dict on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._post,
+                "/plans",
+                plan_data
+            )
+            handled = self._handle_response(response)
+            return handled.data if not handled.error else {}
+        except Exception as e:
+            logger.warning(f"Failed to create plan: {e}")
+            return {}
+
+    async def start_plan_async(self, plan_id: str) -> dict:
+        """
+        Marca um plano como pending para o daemon executar.
+
+        POST /api/plans/:id/start
+
+        Args:
+            plan_id: ID of the plan to start
+
+        Returns:
+            Updated plan data or empty dict on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._post,
+                f"/plans/{plan_id}/start",
+                {"client_id": self.client_id}
+            )
+            handled = self._handle_response(response)
+            return handled.data if not handled.error else {}
+        except Exception as e:
+            logger.warning(f"Failed to start plan: {e}")
+            return {}

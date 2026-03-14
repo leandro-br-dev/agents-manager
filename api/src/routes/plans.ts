@@ -16,7 +16,7 @@ function parsePlan(row: any) {
 // Types for request bodies
 interface CreatePlanBody {
   name: string
-  tasks: string
+  tasks: any[] | string
   project_id?: string
 }
 
@@ -91,8 +91,11 @@ router.post('/', authenticateToken, (req: Request, res: Response) => {
       return res.status(400).json({ data: null, error: 'name and tasks are required' })
     }
 
+    // Parse tasks if it's a string
+    const parsedTasks = typeof tasks === 'string' ? JSON.parse(tasks) : tasks
+
     // Sanitize tasks to ensure each task has an id
-    const sanitizedTasks = (tasks || []).map((task: any, index: number) => ({
+    const sanitizedTasks = (parsedTasks || []).map((task: any, index: number) => ({
       ...task,
       id: task.id || `task-${index + 1}`,
     }))

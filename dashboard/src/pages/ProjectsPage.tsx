@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useGetProjects, useCreateProject, useDeleteProject, useCreateEnvironment, useUpdateEnvironment, useDeleteEnvironment, useLinkAgent, useUnlinkAgent, type Environment } from '@/api/projects'
+import { useGetProjects, useCreateProject, useDeleteProject, useUpdateProject, useCreateEnvironment, useUpdateEnvironment, useDeleteEnvironment, useLinkAgent, useUnlinkAgent, type Environment } from '@/api/projects'
 import { useGetWorkspaces } from '@/api/workspaces'
-import { FolderOpen, Plus, Trash2, Edit2, ChevronDown, ChevronUp, Link2, X } from 'lucide-react'
+import { FolderOpen, Plus, Trash2, Edit2, ChevronDown, ChevronUp, Link2, X, Settings } from 'lucide-react'
 import { PageHeader, Button, Card, Input, Select, ConfirmDialog, EmptyState } from '@/components'
 
 export default function ProjectsPage() {
@@ -9,6 +9,7 @@ export default function ProjectsPage() {
   const { data: allWorkspaces } = useGetWorkspaces()
   const createProjectMutation = useCreateProject()
   const deleteProjectMutation = useDeleteProject()
+  const updateProjectMutation = useUpdateProject()
   const createEnvironmentMutation = useCreateEnvironment()
   const updateEnvironmentMutation = useUpdateEnvironment()
   const deleteEnvironmentMutation = useDeleteEnvironment()
@@ -19,6 +20,7 @@ export default function ProjectsPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set())
+  const [showSettings, setShowSettings] = useState<Set<string>>(new Set())
   const [showEnvForm, setShowEnvForm] = useState<Set<string>>(new Set())
   const [editingEnv, setEditingEnv] = useState<{ projectId: string; envId: string } | null>(null)
   const [linkingAgent, setLinkingAgent] = useState<string | null>(null)
@@ -548,6 +550,55 @@ export default function ProjectsPage() {
                             </div>
                           )
                         })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pipeline Settings Section */}
+                  <div className="border-t border-gray-200 mt-4 pt-4">
+                    <button
+                      onClick={() => {
+                        setShowSettings(prev => {
+                          const next = new Set(prev)
+                          if (next.has(project.id)) {
+                            next.delete(project.id)
+                          } else {
+                            next.add(project.id)
+                          }
+                          return next
+                        })
+                      }}
+                      className="flex items-center justify-between w-full text-left"
+                    >
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Pipeline Settings</h4>
+                      <Settings size={14} className="text-gray-400" />
+                    </button>
+
+                    {showSettings.has(project.id) && (
+                      <div className="mt-3 space-y-3">
+                        {/* Auto-approve toggle */}
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-medium text-gray-700">Auto-approve workflows</p>
+                            <p className="text-xs text-gray-400">Generated plans start automatically</p>
+                          </div>
+                          <button
+                            onClick={() => updateProjectMutation.mutate({
+                              id: project.id,
+                              settings: {
+                                ...project.settings,
+                                auto_approve_workflows: !project.settings?.auto_approve_workflows
+                              }
+                            })}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                              project.settings?.auto_approve_workflows ? 'bg-gray-900' : 'bg-gray-200'
+                            }`}
+                          >
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                              project.settings?.auto_approve_workflows ? 'translate-x-4' : 'translate-x-0.5'
+                            }`} />
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

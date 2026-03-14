@@ -75,6 +75,50 @@ def dry_run(plan_path: str) -> None:
             print(f"         tools: {task.tools}")
 
 
+async def on_plan_completed(plan: dict, client, success: bool) -> None:
+    """
+    Callback chamado quando um plano finaliza — atualiza kanban task vinculada.
+
+    Args:
+        plan: Plan data dict with id, project_id, etc.
+        client: DaemonClient instance
+        success: Whether the plan completed successfully
+    """
+    try:
+        plan_id = plan.get('id')
+        project_id = plan.get('project_id')
+        if not project_id:
+            return
+
+        # Busca a kanban task com esse workflow_id
+        raw_tasks = await client._get(f'/api/kanban/{project_id}')
+        handled = client._handle_response(raw_tasks)
+        tasks = handled.data if not handled.error else []
+
+        linked = next((t for t in tasks if t.get('workflow_id') == plan_id), None)
+        if not linked:
+            return
+
+        task_id = linked['id']
+
+        if success:
+            # Move para done e marca pipeline como done
+            await client._patch(f'/api/kanban/{project_id}/{task_id}', {
+                'column': 'done',
+                'pipeline_status': 'done'
+            })
+            logger.success(f'[KanbanPipeline] Task {task_id} moved to done')
+        else:
+            # Marca pipeline como failed mas mantém na coluna
+            await client.update_kanban_pipeline(
+                project_id, task_id,
+                pipeline_status='failed',
+                error_message='Workflow completed with failures'
+            )
+    except Exception as e:
+        logger.warning(f'Failed to update kanban after plan completion: {e}')
+
+
 async def run_daemon(server_url: str, token: str) -> None:
     """
     Run in daemon mode: poll API for plans and chat sessions to execute.
@@ -101,7 +145,7 @@ async def run_daemon(server_url: str, token: str) -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    logger.info(f"Daemon started - polling {server_url} for plans and chat sessions")
+    logger.info(f"Daemon started - polling {server_url} for plans, chat sessions and kanban tasks")
     logger.info(f"Client ID: {socket.gethostname()}")
 
     # Track running sessions to avoid processing the same session multiple times
@@ -176,6 +220,10 @@ async def run_daemon(server_url: str, token: str) -> None:
                     else:
                         logger.info(f"Plan {plan_name} marked as {status}")
 
+                    # Update kanban task if linked
+                    plan_info = {"id": plan_id, "project_id": plan_data.get("project_id")}
+                    await on_plan_completed(plan_info, client, success)
+
             # Poll for pending chat sessions
             sessions_response = client.get_pending_sessions()
 
@@ -209,6 +257,14 @@ async def run_daemon(server_url: str, token: str) -> None:
                     task = asyncio.create_task(_run_session())
                     background_tasks.add(task)
                     task.add_done_callback(background_tasks.discard)
+
+            # Poll for pending kanban tasks
+            from orchestrator.kanban_pipeline import poll_kanban_tasks
+
+            try:
+                await poll_kanban_tasks(client)
+            except Exception as e:
+                logger.error(f"Kanban pipeline poll error: {e}")
 
             # Wait before next poll (unless shutting down)
             if not shutdown_requested:

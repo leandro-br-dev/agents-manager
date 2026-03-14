@@ -102,9 +102,20 @@ export function initDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
+      settings TEXT DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+
+  // Add settings column to projects table if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE projects ADD COLUMN settings TEXT DEFAULT '{}'`)
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding settings column:', e.message)
+    }
+  }
 
   // Create environments table
   db.exec(`
@@ -222,10 +233,43 @@ export function initDatabase() {
       workflow_id TEXT REFERENCES plans(id) ON DELETE SET NULL,
       result_status TEXT CHECK(result_status IN ('success','partial','needs_rework')),
       result_notes TEXT DEFAULT '',
+      pipeline_status TEXT DEFAULT 'idle' CHECK(pipeline_status IN ('idle','planning','awaiting_approval','running','done','failed')),
+      planning_started_at TEXT,
+      error_message TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
   `)
+
+  // Add pipeline_status column to kanban_tasks table if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE kanban_tasks ADD COLUMN pipeline_status TEXT DEFAULT 'idle' CHECK(pipeline_status IN ('idle','planning','awaiting_approval','running','done','failed'))`)
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding pipeline_status column:', e.message)
+    }
+  }
+
+  // Add planning_started_at column to kanban_tasks table if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE kanban_tasks ADD COLUMN planning_started_at TEXT`)
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding planning_started_at column:', e.message)
+    }
+  }
+
+  // Add error_message column to kanban_tasks table if it doesn't exist
+  try {
+    db.exec(`ALTER TABLE kanban_tasks ADD COLUMN error_message TEXT DEFAULT ''`)
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding error_message column:', e.message)
+    }
+  }
 
   // Create workspace_roles table
   db.exec(`
