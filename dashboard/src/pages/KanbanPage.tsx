@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Link2, LayoutGrid } from 'lucide-react';
-import { PageHeader, Button, Select, EmptyState, ConfirmDialog, Card } from '@/components';
+import { PageHeader, Button, Select, EmptyState, ConfirmDialog } from '@/components';
 import { useGetProjects } from '@/api/projects';
 import {
-  useGetKanbanTasks,
-  useCreateKanbanTask,
-  useUpdateKanbanTask,
-  useDeleteKanbanTask,
-  useUpdateKanbanPipeline,
+  useGetAllKanbanTasks,
+  useCreateKanbanTaskAny,
+  useUpdateKanbanTaskAny,
+  useDeleteKanbanTaskAny,
+  useUpdateKanbanPipelineAny,
+  getProjectColor,
   COLUMNS,
   PRIORITY_LABELS,
   PRIORITY_COLORS,
@@ -19,15 +20,18 @@ import {
 
 export default function KanbanPage() {
   const { data: projects = [] } = useGetProjects();
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(
-    projects.length === 1 ? projects[0].id : ''
-  );
+  const [projectFilter, setProjectFilter] = useState<string>('');
 
-  const { data: tasks = [], isLoading } = useGetKanbanTasks(selectedProjectId);
-  const createTask = useCreateKanbanTask(selectedProjectId);
-  const updateTask = useUpdateKanbanTask(selectedProjectId);
-  const deleteTask = useDeleteKanbanTask(selectedProjectId);
-  const updatePipeline = useUpdateKanbanPipeline(selectedProjectId);
+  const { data: allTasks = [], isLoading } = useGetAllKanbanTasks();
+  const createTask = useCreateKanbanTaskAny();
+  const updateTask = useUpdateKanbanTaskAny();
+  const deleteTask = useDeleteKanbanTaskAny();
+  const updatePipeline = useUpdateKanbanPipelineAny();
+
+  // Filter tasks based on selected project
+  const tasks = projectFilter
+    ? allTasks.filter((task) => task.project_id === projectFilter)
+    : allTasks;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<KanbanTask | null>(null);
@@ -41,11 +45,7 @@ export default function KanbanPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
-
-  // Auto-select project if only one exists
-  if (projects.length === 1 && !selectedProjectId) {
-    setSelectedProjectId(projects[0].id);
-  }
+  const [createProjectId, setCreateProjectId] = useState<string>('');
 
   const handleOpenCreate = (column?: KanbanTask['column']) => {
     setEditingTask(null);
@@ -55,6 +55,14 @@ export default function KanbanPage() {
       priority: 3,
       column: column || 'backlog',
     });
+    // Set the project ID for creating the task
+    if (projectFilter) {
+      setCreateProjectId(projectFilter);
+    } else if (projects.length === 1) {
+      setCreateProjectId(projects[0].id);
+    } else {
+      setCreateProjectId('');
+    }
     setModalOpen(true);
   };
 
@@ -74,6 +82,7 @@ export default function KanbanPage() {
 
     if (editingTask) {
       updateTask.mutate({
+        projectId: editingTask.project_id,
         id: editingTask.id,
         title: formData.title,
         description: formData.description,
@@ -81,7 +90,12 @@ export default function KanbanPage() {
         column: formData.column,
       });
     } else {
-      createTask.mutate(formData);
+      // For creating tasks, use the createProjectId state
+      if (!createProjectId) return;
+      createTask.mutate({
+        projectId: createProjectId,
+        data: formData,
+      });
     }
     setModalOpen(false);
   };
@@ -92,6 +106,7 @@ export default function KanbanPage() {
 
     if (newIndex >= 0 && newIndex < COLUMNS.length) {
       updateTask.mutate({
+        projectId: task.project_id,
         id: task.id,
         column: COLUMNS[newIndex].id as KanbanTask['column'],
       });
@@ -100,7 +115,10 @@ export default function KanbanPage() {
 
   const handleDelete = () => {
     if (deleteConfirm) {
-      deleteTask.mutate(deleteConfirm);
+      const task = allTasks.find(t => t.id === deleteConfirm);
+      if (task) {
+        deleteTask.mutate({ projectId: task.project_id, taskId: deleteConfirm });
+      }
       setDeleteConfirm(null);
     }
   };
@@ -112,32 +130,7 @@ export default function KanbanPage() {
   };
 
   const getTaskColumn = (taskId: string) =>
-    tasks.find(t => t.id === taskId)?.column ?? 'backlog';
-
-  if (!selectedProjectId && projects.length > 1) {
-    return (
-      <div className="max-w-6xl mx-auto py-8 px-6">
-        <PageHeader
-          title="Kanban Board"
-          description="Select a project to view its kanban board"
-        />
-        <Card className="p-6">
-          <Select
-            label="Project"
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-          >
-            <option value="">Select project...</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </Select>
-        </Card>
-      </div>
-    );
-  }
+    allTasks.find(t => t.id === taskId)?.column ?? 'backlog';
 
   if (projects.length === 0) {
     return (
@@ -157,17 +150,19 @@ export default function KanbanPage() {
       <PageHeader
         title="Kanban Board"
         description={
-          projects.find((p) => p.id === selectedProjectId)?.name ||
-          'Manage your project tasks'
+          projectFilter
+            ? `Tasks for ${projects.find((p) => p.id === projectFilter)?.name || 'selected project'}`
+            : 'All Projects'
         }
         actions={
           <div className="flex items-center gap-3">
-            {projects.length > 1 && (
+            {projects.length > 0 && (
               <Select
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
                 className="w-48"
               >
+                <option value="">All Projects</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -230,7 +225,14 @@ export default function KanbanPage() {
                   onDrop={(e) => {
                     e.preventDefault();
                     if (draggedTaskId && column.id !== getTaskColumn(draggedTaskId)) {
-                      updateTask.mutate({ id: draggedTaskId, column: column.id as KanbanTask['column'] });
+                      const task = allTasks.find(t => t.id === draggedTaskId);
+                      if (task) {
+                        updateTask.mutate({
+                          projectId: task.project_id,
+                          id: draggedTaskId,
+                          column: column.id as KanbanTask['column'],
+                        });
+                      }
                     }
                     setDraggedTaskId(null);
                     setDragOverColumn(null);
@@ -258,14 +260,18 @@ export default function KanbanPage() {
                       }}
                       isDragging={draggedTaskId === task.id}
                       onRetryPipeline={(taskId) => {
-                        updatePipeline.mutate({
-                          taskId,
-                          data: {
-                            pipeline_status: 'idle',
-                            workflow_id: null,
-                            error_message: ''
-                          }
-                        });
+                        const task = allTasks.find(t => t.id === taskId);
+                        if (task) {
+                          updatePipeline.mutate({
+                            projectId: task.project_id,
+                            taskId,
+                            data: {
+                              pipeline_status: 'idle',
+                              workflow_id: null,
+                              error_message: ''
+                            }
+                          });
+                        }
                       }}
                     />
                   ))}
@@ -286,6 +292,25 @@ export default function KanbanPage() {
             </h3>
 
             <div className="space-y-4">
+              {!editingTask && !projectFilter && projects.length > 1 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Project *
+                  </label>
+                  <Select
+                    value={createProjectId}
+                    onChange={(e) => setCreateProjectId(e.target.value)}
+                  >
+                    <option value="">Select project...</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
                   Title *
@@ -366,8 +391,8 @@ export default function KanbanPage() {
                 variant="primary"
                 size="sm"
                 onClick={handleSubmit}
-                disabled={!formData.title.trim()}
-                loading={createTask.isPending || updateTask.isPending}
+                disabled={!formData.title.trim() || (!editingTask && !createProjectId && !projectFilter && projects.length > 1)}
+                loading={updateTask.isPending}
               >
                 {editingTask ? 'Save' : 'Create'}
               </Button>
@@ -472,6 +497,14 @@ function TaskCard({
         >
           {PRIORITY_LABELS[task.priority]}
         </span>
+
+        {task.project_name && (
+          <span
+            className={`text-xs font-medium px-2 py-0.5 rounded border ${getProjectColor(task.project_id)}`}
+          >
+            {task.project_name}
+          </span>
+        )}
 
         {task.result_status && (
           <span
