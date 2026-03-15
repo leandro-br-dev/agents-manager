@@ -6,7 +6,7 @@ export interface KanbanTask {
   project_id: string;
   title: string;
   description: string;
-  column: 'backlog' | 'active' | 'in_progress' | 'done';
+  column: 'backlog' | 'planning' | 'in_progress' | 'done';
   priority: 1 | 2 | 3 | 4 | 5;
   order_index: number;
   workflow_id: string | null;
@@ -23,7 +23,7 @@ export interface KanbanTask {
 
 export const COLUMNS = [
   { id: 'backlog', label: 'Backlog' },
-  { id: 'active', label: 'Active' },
+  { id: 'planning', label: 'Planning' },
   { id: 'in_progress', label: 'In Progress' },
   { id: 'done', label: 'Done' },
 ] as const;

@@ -60,23 +60,41 @@ def extract_plan_from_text(text: str, fallback_name: str = '') -> dict | None:
     return None
 
 
-def normalize_plan_tasks(plan_data: dict) -> dict:
+def normalize_plan_tasks(plan_data: dict, planning_context: dict = None) -> dict:
     """
     Normaliza o schema das tasks para o formato esperado pelo runner.
 
     Args:
         plan_data: Dicionário do plano com tasks em schema variável
+        planning_context: Contexto de planejamento com environments e agents para fallback
 
     Returns:
         Dicionário do plano com tasks normalizadas
     """
+    # Extrai environment project_path como fallback de cwd
+    fallback_cwd = ''
+    fallback_workspace_by_role = {}
+
+    if planning_context:
+        envs = planning_context.get('environments', [])
+        if envs:
+            fallback_cwd = envs[0].get('project_path', '')
+
+        # Mapa role → workspace_path para fallback
+        for agent in planning_context.get('agents', []):
+            role = agent.get('role', 'generic')
+            ws = agent.get('workspace_path', '')
+            if ws and role not in fallback_workspace_by_role:
+                fallback_workspace_by_role[role] = ws
+
     normalized_tasks = []
     for i, task in enumerate(plan_data.get('tasks', [])):
-        # Normaliza campos com nomes alternativos
+        # Normaliza cwd com fallback do environment
         cwd = (
             task.get('cwd') or
             task.get('workingDirectory') or
             task.get('working_directory') or
+            fallback_cwd or
             ''
         )
 
@@ -84,6 +102,15 @@ def normalize_plan_tasks(plan_data: dict) -> dict:
         workspace = task.get('workspace') or ''
         if not workspace and isinstance(task.get('agent'), dict):
             workspace = task['agent'].get('workspace', '')
+
+        # Fallback de workspace por role
+        if not workspace:
+            task_role = 'coder'  # default
+            if isinstance(task.get('agent'), dict):
+                task_role = task['agent'].get('role', 'coder')
+            workspace = fallback_workspace_by_role.get(task_role, '')
+            if workspace:
+                logger.info(f'[KanbanPipeline] Using fallback workspace for role {task_role}: {workspace}')
 
         # depends_on pode vir como dependencies
         depends_on = (
@@ -107,8 +134,85 @@ def normalize_plan_tasks(plan_data: dict) -> dict:
             'depends_on': depends_on,
         })
 
+    # Loga resultado final
+    for t in normalized_tasks:
+        logger.info(f'[KanbanPipeline] Task "{t["name"][:30]}": cwd={t["cwd"][-40:] if t["cwd"] else "EMPTY"}, workspace={t["workspace"][-30:] if t["workspace"] else "EMPTY"}')
+
     plan_data['tasks'] = normalized_tasks
     return plan_data
+
+
+async def build_planning_prompt(
+    task: dict,
+    planning_context: dict,
+    skill_content: str
+) -> str:
+    """Monta o prompt completo para o agente planejador."""
+    project = planning_context.get('project', {})
+    environments = planning_context.get('environments', [])
+    agents = planning_context.get('agents', [])
+
+    # Seção de contexto do projeto
+    project_section = f"""## Project Context
+
+Name: {project.get('name', 'Unknown')}
+Description: {project.get('description', 'No description')}
+"""
+
+    # Seção de ambientes
+    env_lines = []
+    for env in environments:
+        env_lines.append(
+            f"- **{env.get('name')}** ({env.get('type')})\n"
+            f"  project_path: `{env.get('project_path')}`"
+        )
+    env_section = "## Environments\n\n" + ("\n".join(env_lines) if env_lines else "No environments configured.")
+
+    # Seção de agentes disponíveis
+    agent_lines = []
+    for agent in agents:
+        agent_lines.append(
+            f"- **{agent.get('name')}** (role: `{agent.get('role')}`)\n"
+            f"  workspace: `{agent.get('workspace_path')}`"
+        )
+    agents_section = (
+        "## Available Agents\n\n"
+        + ("\n".join(agent_lines) if agent_lines else "No agents configured.")
+        + "\n\nWhen creating tasks, use the exact `workspace` paths listed above."
+        + "\nMatch task type to agent role: planner for planning, coder for implementation, reviewer for validation."
+    )
+
+    # Tarefa do kanban
+    task_section = f"""## Task to Plan
+
+Title: {task.get('title', 'Untitled')}
+Description:
+{task.get('description', 'No description provided.')}
+"""
+
+    # Instrução de cwd
+    cwd_instruction = """
+## Important: cwd vs workspace
+
+- `workspace`: path to the agent's workspace folder (where .claude/settings.local.json lives)
+- `cwd`: the project directory where the code lives (use environment project_path above)
+
+For coder agents: set cwd = the environment project_path, workspace = agent workspace_path
+For reviewer/tester agents: same pattern
+"""
+
+    return f"""{skill_content}
+
+---
+
+{project_section}
+{env_section}
+{agents_section}
+{task_section}
+{cwd_instruction}
+
+Analyze the task, read the relevant codebase using the project_path above, and generate a precise execution plan.
+Output the plan using the <plan>...</plan> format as defined in the skill above."""
 
 
 async def find_planner_workspace(project_id: str, client) -> str | None:
@@ -189,22 +293,12 @@ async def process_kanban_task(task: dict, client) -> None:
         if not planner_workspace:
             raise ValueError(f'No planner agent with role=planner found for project {project_id}. Assign a planner agent to this project first.')
 
-        logger.info('[KanbanPipeline] Step 2: fetching agents context...')
-        agents_context = await client.get_project_agents_context(project_id)
+        logger.info('[KanbanPipeline] Step 2: fetching full project planning context...')
+        planning_context = await client.get_project_planning_context(project_id)
+        logger.info(f'[KanbanPipeline] Context: {len(planning_context.get("agents", []))} agents, {len(planning_context.get("environments", []))} environments')
 
-        logger.info('[KanbanPipeline] Step 3: preparing planning prompt...')
-        # Prompt para o planning agent
-        base_prompt = f"""You are processing a task from the project kanban board.
-
-Task Title: {title}
-Task Description: {description}
-
-{agents_context}
-
-Analyze the task, read the relevant codebase, and generate a precise execution plan.
-Output the plan using the <plan>...</plan> format as instructed in your planning skill."""
-
-        # Lê o SKILL.md do planner como fallback
+        # Lê SKILL.md (sempre, independente de setting_sources)
+        logger.info('[KanbanPipeline] Step 3: loading planning skill...')
         skill_path = os.path.join(planner_workspace, '.claude', 'skills', 'planning', 'SKILL.md')
         skill_content = ''
         if os.path.exists(skill_path):
@@ -213,9 +307,17 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
             logger.info(f'[KanbanPipeline] Loaded planning skill ({len(skill_content)} chars)')
         else:
             logger.warning(f'[KanbanPipeline] Planning skill not found at {skill_path}')
+            skill_content = 'Generate a precise execution plan in <plan>...</plan> format.'
+
+        logger.info('[KanbanPipeline] Step 4: building planning prompt...')
+        prompt = await build_planning_prompt({
+            'title': title,
+            'description': description
+        }, planning_context, skill_content)
+        logger.info(f'[KanbanPipeline] Prompt length: {len(prompt)} chars')
 
         # Executa o planning agent via SDK
-        logger.info('[KanbanPipeline] Step 4: importing SDK and preparing options...')
+        logger.info('[KanbanPipeline] Step 5: importing SDK and preparing options...')
         from claude_agent_sdk import query, ClaudeAgentOptions
 
         # Get valid SDK fields
@@ -229,16 +331,10 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         # Filtra apenas campos válidos
         opts_kwargs = {k: v for k, v in opts_kwargs.items() if k in valid_fields}
 
-        # Adiciona skill ao prompt se setting_sources não disponível
-        prompt = base_prompt
-        if skill_content and 'setting_sources' not in valid_fields:
-            logger.info('[KanbanPipeline] setting_sources unavailable, injecting skill into prompt')
-            prompt = f"{skill_content}\n\n---\n\n{base_prompt}"
-
         opts = ClaudeAgentOptions(**opts_kwargs)
 
         full_response = ""
-        logger.info('[KanbanPipeline] Step 5: running planning agent...')
+        logger.info('[KanbanPipeline] Step 6: running planning agent...')
         async for event in query(prompt=prompt, options=opts):
             event_type = type(event).__name__
             if event_type == "AssistantMessage":
@@ -250,7 +346,7 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
                 if result_text:
                     full_response += result_text
 
-        logger.info(f'[KanbanPipeline] Step 6: planning agent response length: {len(full_response)}')
+        logger.info(f'[KanbanPipeline] Step 7: planning agent response length: {len(full_response)}')
 
         # Salva resposta para diagnóstico
         log_path = f'/tmp/kanban_agent_response_{task_id[:8]}.txt'
@@ -265,17 +361,17 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         logger.info(f'[KanbanPipeline] Has </plan>: {"</plan>" in full_response}')
 
         # Extrai o plano da resposta
-        logger.info('[KanbanPipeline] Step 7: extracting plan from response...')
+        logger.info('[KanbanPipeline] Step 8: extracting plan from response...')
         plan_data = extract_plan_from_text(full_response, fallback_name=title)
         if not plan_data:
             raise ValueError("Planning agent did not produce a valid <plan> block")
 
         # Normaliza schema das tasks
-        plan_data = normalize_plan_tasks(plan_data)
+        plan_data = normalize_plan_tasks(plan_data, planning_context=planning_context)
         logger.info(f'[KanbanPipeline] Tasks after normalization: {[(t["id"], t["name"][:30]) for t in plan_data["tasks"]]}')
 
         logger.info(
-            f"[KanbanPipeline] Step 8: plan extracted: {plan_data['name']} "
+            f"[KanbanPipeline] Step 9: plan extracted: {plan_data['name']} "
             f"({len(plan_data['tasks'])} tasks)"
         )
 
@@ -289,16 +385,16 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         plan_data["kanban_task_id"] = task_id  # para rastreabilidade
 
         # Cria o workflow
-        logger.info('[KanbanPipeline] Step 9: creating workflow from plan...')
+        logger.info('[KanbanPipeline] Step 10: creating workflow from plan...')
         created_plan = await client.create_plan_from_data(plan_data)
         plan_id = created_plan.get("id")
         if not plan_id:
             raise ValueError("Failed to create workflow from plan")
 
-        logger.info(f'[KanbanPipeline] Step 10: workflow created: {plan_id}')
+        logger.info(f'[KanbanPipeline] Step 11: workflow created: {plan_id}')
 
         # Vincula workflow à kanban task
-        logger.info('[KanbanPipeline] Step 11: linking workflow to kanban task...')
+        logger.info('[KanbanPipeline] Step 12: linking workflow to kanban task...')
         await client.update_kanban_pipeline(
             project_id, task_id, pipeline_status="awaiting_approval", workflow_id=plan_id
         )
@@ -306,14 +402,14 @@ Output the plan using the <plan>...</plan> format as instructed in your planning
         # Auto-aprova se configurado
         auto_approve = project_settings.get("auto_approve_workflows", False)
         if auto_approve:
-            logger.info('[KanbanPipeline] Step 12: auto-approving workflow...')
+            logger.info('[KanbanPipeline] Step 13: auto-approving workflow...')
             await client.start_plan_async(plan_id)
             await client.update_kanban_pipeline(project_id, task_id, pipeline_status="running")
             logger.success(
                 f"[KanbanPipeline] Workflow auto-approved and started: {plan_id}"
             )
         else:
-            logger.info(f'[KanbanPipeline] Step 12: workflow awaiting manual approval: {plan_id}')
+            logger.info(f'[KanbanPipeline] Step 13: workflow awaiting manual approval: {plan_id}')
 
     except Exception as e:
         logger.error(f'[KanbanPipeline] Unhandled error in task {task_id}: {type(e).__name__}: {e}')

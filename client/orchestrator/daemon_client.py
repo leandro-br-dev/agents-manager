@@ -393,6 +393,47 @@ class DaemonClient:
             logger.warning(f"Error fetching agents context: {e}")
             return ""
 
+    async def get_project_planning_context(self, project_id: str) -> dict:
+        """
+        Retorna contexto completo do projeto para o planejador.
+
+        Inclui informações do projeto, ambientes e agentes com roles,
+        permitindo que o planejador gere planos mais precisos.
+
+        GET /api/projects/:id/planning-context
+
+        Args:
+            project_id: ID of the project
+
+        Returns:
+            Dict with project, environments, and agents, or empty dict on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(
+                self._client.get,
+                f"/projects/{project_id}/planning-context",
+            )
+            handled = self._handle_response(response)
+
+            if handled.error:
+                logger.warning(f"Failed to fetch planning context: {handled.error}")
+                return {}
+
+            # Extract data from envelope if present
+            data = handled.data
+            if isinstance(data, dict):
+                return data
+            elif isinstance(data, dict) and 'data' in data:
+                return data['data'] or {}
+            else:
+                return {}
+
+        except Exception as e:
+            logger.warning(f"Failed to get planning context: {e}")
+            return {}
+
     # Chat session methods
 
     def get_pending_sessions(self) -> PlanResponse:

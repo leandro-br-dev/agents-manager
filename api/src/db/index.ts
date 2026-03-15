@@ -227,7 +227,7 @@ export function initDatabase() {
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
-      column TEXT NOT NULL DEFAULT 'backlog' CHECK(column IN ('backlog','active','in_progress','done')),
+      column TEXT NOT NULL DEFAULT 'backlog' CHECK(column IN ('backlog','planning','in_progress','done')),
       priority INTEGER NOT NULL DEFAULT 3 CHECK(priority BETWEEN 1 AND 5),
       order_index INTEGER NOT NULL DEFAULT 0,
       workflow_id TEXT REFERENCES plans(id) ON DELETE SET NULL,
@@ -240,6 +240,21 @@ export function initDatabase() {
       updated_at TEXT DEFAULT (datetime('now'))
     );
   `)
+
+  // Migration: update existing 'active' columns to 'planning'
+  // This is safe to run even if already migrated
+  try {
+    const checkResult = db.prepare("SELECT COUNT(*) as count FROM kanban_tasks WHERE \"column\" = 'active'").get() as any
+    if (checkResult.count > 0) {
+      const updateResult = db.prepare("UPDATE kanban_tasks SET \"column\" = 'planning' WHERE \"column\" = 'active'").run()
+      console.log(`Migrated ${updateResult.changes} kanban tasks from 'active' to 'planning'`)
+    }
+  } catch (e: any) {
+    // Table might not exist yet or CHECK constraint already updated
+    if (!e.message.includes('no such table') && !e.message.includes('CHECK constraint failed')) {
+      console.warn('Warning migrating kanban columns:', e.message)
+    }
+  }
 
   // Add pipeline_status column to kanban_tasks table if it doesn't exist
   try {

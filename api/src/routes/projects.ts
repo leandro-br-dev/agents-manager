@@ -34,44 +34,6 @@ router.post('/', authenticateToken, (req, res) => {
   return res.status(201).json({ data: { id, name, description, settings: settings || {} }, error: null })
 })
 
-// GET /api/projects/:id
-router.get('/:id', authenticateToken, (req, res) => {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
-  if (!project) return res.status(404).json({ data: null, error: 'Not found' })
-  project.settings = JSON.parse(project.settings || '{}')
-  project.environments = db.prepare('SELECT * FROM environments WHERE project_id = ? ORDER BY created_at ASC').all(project.id)
-  const agents = db.prepare('SELECT workspace_path FROM project_agents WHERE project_id = ?').all(project.id) as any[]
-  project.agent_paths = agents.map(a => a.workspace_path)
-  return res.json({ data: project, error: null })
-})
-
-// DELETE /api/projects/:id
-router.delete('/:id', authenticateToken, (req, res) => {
-  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id)
-  return res.json({ data: { deleted: true }, error: null })
-})
-
-// PUT /api/projects/:id
-router.put('/:id', authenticateToken, (req, res) => {
-  try {
-    const { name, description, settings } = req.body
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
-    if (!project) return res.status(404).json({ data: null, error: 'Project not found' })
-
-    const currentSettings = JSON.parse(project.settings || '{}')
-    const newSettings = settings ? { ...currentSettings, ...settings } : currentSettings
-
-    db.prepare('UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description), settings = ? WHERE id = ?')
-      .run(name, description, JSON.stringify(newSettings), req.params.id)
-
-    const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
-    updated.settings = JSON.parse(updated.settings || '{}')
-    return res.json({ data: updated, error: null })
-  } catch (err: any) {
-    return res.status(500).json({ data: null, error: err.message })
-  }
-})
-
 // POST /api/projects/:id/environments
 router.post('/:id/environments', authenticateToken, (req, res) => {
   const { name, type, project_path, ssh_config, env_vars } = req.body
@@ -195,6 +157,35 @@ router.delete('/:id/agents', authenticateToken, (req, res) => {
   return res.json({ data: { unlinked: true }, error: null })
 })
 
+// DELETE /api/projects/:id
+
+// DELETE /api/projects/:id
+router.delete('/:id', authenticateToken, (req, res) => {
+  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id)
+  return res.json({ data: { deleted: true }, error: null })
+})
+
+// PUT /api/projects/:id
+router.put('/:id', authenticateToken, (req, res) => {
+  try {
+    const { name, description, settings } = req.body
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
+    if (!project) return res.status(404).json({ data: null, error: 'Project not found' })
+
+    const currentSettings = JSON.parse(project.settings || '{}')
+    const newSettings = settings ? { ...currentSettings, ...settings } : currentSettings
+
+    db.prepare('UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description), settings = ? WHERE id = ?')
+      .run(name, description, JSON.stringify(newSettings), req.params.id)
+
+    const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
+    updated.settings = JSON.parse(updated.settings || '{}')
+    return res.json({ data: updated, error: null })
+  } catch (err: any) {
+    return res.status(500).json({ data: null, error: err.message })
+  }
+})
+
 // GET /api/projects/:id/agents-context — retorna agentes disponíveis para injeção no contexto do planejador
 router.get('/:id/agents-context', authenticateToken, (req, res) => {
   try {
@@ -242,6 +233,93 @@ router.get('/:id/agents-context', authenticateToken, (req, res) => {
     console.error('Error fetching agents context:', e)
     return res.status(500).json({ data: null, error: e.message })
   }
+})
+
+// GET /api/projects/:id/planning-context — retorna contexto completo para o agente planejador
+router.get('/:id/planning-context', authenticateToken, (req, res) => {
+  console.log('[GET /api/projects/:id/planning-context] Called with id:', req.params.id)
+  try {
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
+    console.log('[GET /api/projects/:id/planning-context] Project found:', !!project)
+    if (!project) {
+      return res.status(404).json({ data: null, error: 'Project not found' })
+    }
+
+    // Parse settings
+    let settings = {}
+    try {
+      settings = JSON.parse(project.settings || '{}')
+    } catch {}
+
+    // Fetch environments
+    const environments = db.prepare(`
+      SELECT id, name, type, project_path, agent_workspace
+      FROM environments
+      WHERE project_id = ?
+      ORDER BY created_at ASC
+    `).all(req.params.id)
+
+    // Fetch agents with roles
+    const agents = db.prepare(`
+      SELECT
+        pa.workspace_path,
+        COALESCE(wr.role, 'generic') as role
+      FROM project_agents pa
+      LEFT JOIN workspace_roles wr ON wr.workspace_path = pa.workspace_path
+      WHERE pa.project_id = ?
+    `).all(req.params.id) as any[]
+
+    // Format agents with names
+    const agentsWithNames = agents.map((a: any) => {
+      const workspacePath = a.workspace_path
+      const role = a.role
+
+      // Extract name from workspace path
+      // Expected format: /root/projects/agents-manager/projects/{project}/agents/{agent-name}/
+      const pathParts = workspacePath.split(path.sep).filter(Boolean)
+      let name = 'unknown'
+
+      if (pathParts.length >= 5 && pathParts[3] === 'agents') {
+        name = pathParts[4]
+      } else if (pathParts.length >= 4) {
+        name = pathParts[pathParts.length - 1]
+      }
+
+      return {
+        name,
+        role,
+        workspace_path: workspacePath,
+      }
+    })
+
+    return res.json({
+      data: {
+        project: {
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          settings,
+        },
+        environments,
+        agents: agentsWithNames,
+      },
+      error: null,
+    })
+  } catch (err: any) {
+    console.error('Error fetching planning context:', err)
+    return res.status(500).json({ data: null, error: err.message })
+  }
+})
+
+// GET /api/projects/:id — must be AFTER more specific routes like /:id/agents-context
+router.get('/:id', authenticateToken, (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any
+  if (!project) return res.status(404).json({ data: null, error: 'Not found' })
+  project.settings = JSON.parse(project.settings || '{}')
+  project.environments = db.prepare('SELECT * FROM environments WHERE project_id = ? ORDER BY created_at ASC').all(project.id)
+  const agents = db.prepare('SELECT workspace_path FROM project_agents WHERE project_id = ?').all(project.id) as any[]
+  project.agent_paths = agents.map(a => a.workspace_path)
+  return res.json({ data: project, error: null })
 })
 
 export default router

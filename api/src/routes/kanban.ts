@@ -93,7 +93,7 @@ router.delete('/:projectId/:taskId', authenticateToken, (req: Request, res: Resp
   }
 })
 
-// GET /api/kanban/:projectId/pending-pipeline — retorna tasks ativas sem workflow
+// GET /api/kanban/:projectId/pending-pipeline — retorna tasks em planning sem workflow
 router.get('/:projectId/pending-pipeline', authenticateToken, (req: Request, res: Response) => {
   try {
     const tasks = db.prepare(`
@@ -101,7 +101,7 @@ router.get('/:projectId/pending-pipeline', authenticateToken, (req: Request, res
       FROM kanban_tasks kt
       JOIN projects p ON p.id = kt.project_id
       WHERE kt.project_id = ?
-        AND kt.column = 'active'
+        AND kt.column = 'planning'
         AND (kt.workflow_id IS NULL OR kt.workflow_id = '')
         AND kt.pipeline_status = 'idle'
       ORDER BY kt.priority ASC, kt.created_at ASC
