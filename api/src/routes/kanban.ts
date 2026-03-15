@@ -163,4 +163,135 @@ router.patch('/:projectId/:taskId/pipeline', authenticateToken, (req: Request, r
   }
 })
 
+// POST /api/kanban/:projectId/auto-move — move tasks automatically based on business rules
+router.post('/:projectId/auto-move', authenticateToken, (req: Request, res: Response) => {
+  const movedTasks: Array<{
+    task: any,
+    oldColumn: string,
+    newColumn: string
+  }> = []
+  const reasons: string[] = []
+
+  try {
+    // Verify project exists
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.projectId)
+    if (!project) {
+      return res.status(404).json({ moved_tasks: [], reasons: [], error: 'Project not found' })
+    }
+
+    // Use transaction for atomic updates
+    db.transaction(() => {
+      // Rule 1: Backlog → Planning
+      // Check if planning column is empty
+      const planningCount = db.prepare(`
+        SELECT COUNT(*) as count
+        FROM kanban_tasks
+        WHERE project_id = ? AND column = 'planning'
+      `).get(req.params.projectId) as { count: number }
+
+      console.log(`[Auto-move] Planning column count: ${planningCount.count}`)
+
+      if (planningCount.count === 0) {
+        // Find highest priority task from backlog (priority ASC = 1 is highest/critical)
+        const backlogTask = db.prepare(`
+          SELECT *
+          FROM kanban_tasks
+          WHERE project_id = ? AND column = 'backlog'
+          ORDER BY priority ASC, created_at ASC
+          LIMIT 1
+        `).get(req.params.projectId) as any
+
+        if (backlogTask) {
+          console.log(`[Auto-move] Found backlog task to move: ${backlogTask.id} - ${backlogTask.title} (priority: ${backlogTask.priority})`)
+
+          // Move task to planning
+          db.prepare(`
+            UPDATE kanban_tasks
+            SET column = 'planning', updated_at = datetime('now')
+            WHERE id = ?
+          `).run(backlogTask.id)
+
+          // Fetch updated task
+          const updatedTask = db.prepare('SELECT * FROM kanban_tasks WHERE id = ?').get(backlogTask.id)
+
+          movedTasks.push({
+            task: updatedTask,
+            oldColumn: 'backlog',
+            newColumn: 'planning'
+          })
+
+          reasons.push(`Moved "${backlogTask.title}" from backlog to planning (highest priority: ${backlogTask.priority})`)
+          console.log(`[Auto-move] ✓ Moved task ${backlogTask.id} from backlog to planning`)
+        } else {
+          console.log(`[Auto-move] No backlog tasks found to move`)
+        }
+      }
+
+      // Rule 2: Planning → In Progress
+      // Check if in_progress column is empty
+      const inProgressCount = db.prepare(`
+        SELECT COUNT(*) as count
+        FROM kanban_tasks
+        WHERE project_id = ? AND column = 'in_progress'
+      `).get(req.params.projectId) as { count: number }
+
+      console.log(`[Auto-move] In Progress column count: ${inProgressCount.count}`)
+
+      if (inProgressCount.count === 0) {
+        // Find task in planning that has a workflow_id set
+        const planningTask = db.prepare(`
+          SELECT *
+          FROM kanban_tasks
+          WHERE project_id = ?
+            AND column = 'planning'
+            AND workflow_id IS NOT NULL
+            AND workflow_id != ''
+          ORDER BY priority ASC, created_at ASC
+          LIMIT 1
+        `).get(req.params.projectId) as any
+
+        if (planningTask) {
+          console.log(`[Auto-move] Found planning task with workflow_id: ${planningTask.id} - ${planningTask.title} (workflow_id: ${planningTask.workflow_id})`)
+
+          // Move task to in_progress
+          db.prepare(`
+            UPDATE kanban_tasks
+            SET column = 'in_progress', updated_at = datetime('now')
+            WHERE id = ?
+          `).run(planningTask.id)
+
+          // Fetch updated task
+          const updatedTask = db.prepare('SELECT * FROM kanban_tasks WHERE id = ?').get(planningTask.id)
+
+          movedTasks.push({
+            task: updatedTask,
+            oldColumn: 'planning',
+            newColumn: 'in_progress'
+          })
+
+          reasons.push(`Moved "${planningTask.title}" from planning to in_progress (has workflow_id: ${planningTask.workflow_id})`)
+          console.log(`[Auto-move] ✓ Moved task ${planningTask.id} from planning to in_progress`)
+        } else {
+          console.log(`[Auto-move] No planning tasks with workflow_id found to move`)
+        }
+      }
+    })()
+
+    console.log(`[Auto-move] Completed. Moved ${movedTasks.length} task(s). Reasons: ${reasons.join('; ')}`)
+
+    res.json({
+      moved_tasks: movedTasks,
+      reasons: reasons,
+      error: null
+    })
+  } catch (err: any) {
+    console.error('[Auto-move] Error:', err)
+    res.status(500).json({
+      moved_tasks: [],
+      reasons: [],
+      error: err.message
+    })
+  }
+})
+
 export default router

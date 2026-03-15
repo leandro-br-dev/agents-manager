@@ -217,12 +217,31 @@ async def run_daemon(server_url: str, token: str) -> None:
                     plan = Plan(id=plan_id, name=plan_name, tasks=tasks)
 
                     # Execute the plan with log collection
-                    success, error_msg = await run_plan_with_logging(client, plan_id, plan)
+                    success, error_msg, review = await run_plan_with_logging(client, plan_id, plan)
 
                     # Notify API of completion
                     status = "success" if success else "failed"
                     result = f"Plan {plan_name} completed successfully" if success else f"Plan {plan_name} failed: {error_msg or 'Unknown error'}"
-                    complete_response = client.complete_plan(plan_id, status, result)
+
+                    # Extract review data if available
+                    result_status = None
+                    result_notes = None
+                    structured_output = None
+
+                    if review:
+                        result_status = review.get('result_status')
+                        result_notes = review.get('result_notes')
+                        structured_output = review
+                        logger.info(f"Plan completed with review: result_status={result_status}")
+
+                    complete_response = client.complete_plan(
+                        plan_id,
+                        status,
+                        result,
+                        result_status=result_status,
+                        result_notes=result_notes,
+                        structured_output=structured_output,
+                    )
 
                     if complete_response.error:
                         logger.error(f"Failed to complete plan: {complete_response.error}")
@@ -300,7 +319,7 @@ async def run_plan_with_logging(
     client: object,  # DaemonClient - avoid circular import
     plan_id: str,
     plan: Plan,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, dict | None]:
     """
     Execute a plan and stream logs to the API.
 
@@ -312,7 +331,7 @@ async def run_plan_with_logging(
         plan: Plan to execute
 
     Returns:
-        Tuple of (success: bool, error_message: str | None)
+        Tuple of (success: bool, error_message: str | None, review: dict | None)
     """
     from orchestrator.runner import run_plan
 
@@ -339,7 +358,7 @@ async def run_plan_with_logging(
 
     try:
         # Execute plan with log callback
-        success = await run_plan(plan, log_callback, client)
+        success, review = await run_plan(plan, log_callback, client)
 
         # Flush any remaining logs
         if logs_buffer:
@@ -348,7 +367,7 @@ async def run_plan_with_logging(
                 logger.error(f"Failed to send logs: {log_response.error}")
 
         logger.plan_done(plan.name, success=success)
-        return success, None
+        return success, None, review
 
     except Exception as e:
         error_msg = str(e)
@@ -483,7 +502,7 @@ async def main() -> None:
         dry_run(args.plan)
         return
 
-    success = await run_plan(plan)
+    success, review = await run_plan(plan)
     sys.exit(0 if success else 1)
 
 

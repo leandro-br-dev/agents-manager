@@ -185,3 +185,34 @@ export function useUpdateKanbanPipelineAny() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban'] }),
   });
 }
+
+// Auto-move feature types and hooks
+export interface AutoMoveResult {
+  moved_tasks: Array<{
+    task: KanbanTask;
+    from_column: string;
+    to_column: string;
+  }>;
+  reasons: string[];
+}
+
+export function useAutoMoveKanban(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient.post<AutoMoveResult>(`/api/kanban/${projectId}/auto-move`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kanban', projectId] });
+      qc.invalidateQueries({ queryKey: ['kanban', 'all'] });
+    },
+  });
+}
+
+export function useAutoMoveKanbanAny() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) =>
+      apiClient.post<AutoMoveResult>(`/api/kanban/${projectId}/auto-move`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban'] }),
+  });
+}

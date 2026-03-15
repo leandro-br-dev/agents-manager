@@ -34,9 +34,9 @@ Open **http://localhost:5173**
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) — system components, data flow and API reference
-- [User Guide](docs/USER_GUIDE.md) — how to create projects, agents, plans and workflows
-- [Development](docs/DEVELOPMENT.md) — local setup, project structure and contributing
+- [User Guide](docs/USER_GUIDE.md) — comprehensive guide covering getting started, architecture, development setup, and UI patterns
+- [AUTO_MOVE_COMPLETE.md](docs/AUTO_MOVE_COMPLETE.md) — technical documentation for advanced auto-move features
+- [AUTO_MOVE_FEATURE.md](docs/AUTO_MOVE_FEATURE.md) — feature guides and usage examples
 
 ## License
 
