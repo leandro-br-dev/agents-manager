@@ -536,6 +536,27 @@ class DaemonClient:
             logger.warning(f"PATCH {path} failed: {e}")
             return None
 
+    async def _put(self, path: str, data: dict[str, Any]) -> dict | None:
+        """
+        Internal PUT request method (async).
+
+        Args:
+            path: API path (e.g., /kanban/:projectId/:taskId)
+            data: Request body
+
+        Returns:
+            Parsed JSON response data, or None on error
+        """
+        import asyncio
+
+        try:
+            response = await asyncio.to_thread(self._client.put, path, json=data)
+            handled = self._handle_response(response)
+            return None if handled.error else handled.data
+        except Exception as e:
+            logger.warning(f"PUT {path} failed: {e}")
+            return None
+
     async def _post(self, path: str, data: dict[str, Any] | None = None) -> dict | list | None:
         """
         Internal POST request method (async).

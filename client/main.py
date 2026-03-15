@@ -132,6 +132,15 @@ async def run_daemon(server_url: str, token: str) -> None:
         logger.info("Unsetting CLAUDECODE to avoid nested session detection")
         del os.environ['CLAUDECODE']
 
+    # Write PID file
+    pid_file = "/tmp/agents-manager-daemon.pid"
+    try:
+        with open(pid_file, 'w') as f:
+            f.write(str(os.getpid()))
+        logger.info(f"PID file written: {pid_file}")
+    except Exception as e:
+        logger.error(f"Failed to write PID file: {e}")
+
     from orchestrator.daemon_client import DaemonClient
 
     client = DaemonClient(server_url, token)
@@ -262,6 +271,7 @@ async def run_daemon(server_url: str, token: str) -> None:
             from orchestrator.kanban_pipeline import poll_kanban_tasks
 
             try:
+                logger.debug('[Daemon] Polling kanban tasks...')
                 await poll_kanban_tasks(client)
             except Exception as e:
                 logger.error(f"Kanban pipeline poll error: {e}")
@@ -274,6 +284,15 @@ async def run_daemon(server_url: str, token: str) -> None:
         logger.error(f"Daemon error: {e}")
     finally:
         client.close()
+
+        # Remove PID file
+        try:
+            if os.path.exists(pid_file):
+                os.remove(pid_file)
+                logger.info(f"PID file removed: {pid_file}")
+        except Exception as e:
+            logger.error(f"Failed to remove PID file: {e}")
+
         logger.info("Daemon stopped")
 
 

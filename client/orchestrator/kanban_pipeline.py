@@ -384,8 +384,12 @@ async def process_kanban_task(task: dict, client) -> None:
         plan_data["project_id"] = project_id
         plan_data["kanban_task_id"] = task_id  # para rastreabilidade
 
+        # Define status do plano baseado em auto_approve
+        auto_approve = project_settings.get("auto_approve_workflows", False)
+        plan_data["status"] = "pending" if auto_approve else "awaiting_approval"
+
         # Cria o workflow
-        logger.info('[KanbanPipeline] Step 10: creating workflow from plan...')
+        logger.info(f'[KanbanPipeline] Step 10: creating workflow from plan (status={plan_data["status"]})...')
         created_plan = await client.create_plan_from_data(plan_data)
         plan_id = created_plan.get("id")
         if not plan_id:
@@ -400,13 +404,18 @@ async def process_kanban_task(task: dict, client) -> None:
         )
 
         # Auto-aprova se configurado
-        auto_approve = project_settings.get("auto_approve_workflows", False)
         if auto_approve:
             logger.info('[KanbanPipeline] Step 13: auto-approving workflow...')
             await client.start_plan_async(plan_id)
-            await client.update_kanban_pipeline(project_id, task_id, pipeline_status="running")
+            # Mover coluna para in_progress e atualizar status
+            await client._put(f"/kanban/{project_id}/{task_id}", {
+                "column": "in_progress"
+            })
+            await client.update_kanban_pipeline(
+                project_id, task_id, pipeline_status="running"
+            )
             logger.success(
-                f"[KanbanPipeline] Workflow auto-approved and started: {plan_id}"
+                f"[KanbanPipeline] Workflow auto-approved and started, task moved to in_progress: {plan_id}"
             )
         else:
             logger.info(f'[KanbanPipeline] Step 13: workflow awaiting manual approval: {plan_id}')
@@ -467,11 +476,13 @@ async def sync_workflow_status(client) -> None:
                     task_id = task["id"]
 
                     if plan_status == "success" and task.get("column") != "done":
-                        await client._patch(f"/kanban/{project_id}/{task_id}", {
-                            "column": "done",
-                            "pipeline_status": "done"
+                        await client._put(f"/kanban/{project_id}/{task_id}", {
+                            "column": "done"
                         })
-                        logger.success(f"[KanbanPipeline] Auto-moved task to done: {task_id}")
+                        await client.update_kanban_pipeline(
+                            project_id, task_id, pipeline_status="done"
+                        )
+                        logger.success(f"[KanbanPipeline] Task completed, moved to done: {task_id}")
 
                     elif plan_status == "failed" and task.get("pipeline_status") != "failed":
                         await client.update_kanban_pipeline(
@@ -480,12 +491,15 @@ async def sync_workflow_status(client) -> None:
                             error_message="Workflow failed"
                         )
 
-                    elif plan_status == "pending" and task.get("pipeline_status") == "awaiting_approval":
-                        # Usuário aprovou manualmente no dashboard
+                    elif plan_status == "running" and task.get("pipeline_status") in ("awaiting_approval",):
+                        # Usuário aprovou manualmente no dashboard — move coluna e atualiza status
+                        await client._put(f"/kanban/{project_id}/{task_id}", {
+                            "column": "in_progress"
+                        })
                         await client.update_kanban_pipeline(
-                            project_id, task_id,
-                            pipeline_status="running"
+                            project_id, task_id, pipeline_status="running"
                         )
+                        logger.info(f"[KanbanPipeline] Task approved and moved to in_progress: {task_id}")
 
                 except Exception as e:
                     logger.warning(f"Failed to sync workflow {workflow_id}: {e}")

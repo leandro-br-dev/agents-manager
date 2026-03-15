@@ -85,7 +85,7 @@ router.get('/', authenticateToken, (req: Request, res: Response) => {
 // POST /api/plans - Create a new plan
 router.post('/', authenticateToken, (req: Request, res: Response) => {
   try {
-    const { name, tasks, project_id }: CreatePlanBody = req.body
+    const { name, tasks, project_id, status: requestedStatus }: CreatePlanBody & { status?: string } = req.body
 
     if (!name || !tasks) {
       return res.status(400).json({ data: null, error: 'name and tasks are required' })
@@ -100,13 +100,17 @@ router.post('/', authenticateToken, (req: Request, res: Response) => {
       id: task.id || `task-${index + 1}`,
     }))
 
+    // Validate and set status (default to 'pending')
+    const allowedStatuses = ['pending', 'awaiting_approval']
+    const status = allowedStatuses.includes(requestedStatus) ? requestedStatus : 'pending'
+
     const id = randomUUID()
     const now = new Date().toISOString()
 
     db.prepare(`
       INSERT INTO plans (id, name, tasks, status, project_id, created_at)
-      VALUES (?, ?, ?, 'pending', ?, ?)
-    `).run(id, name, JSON.stringify(sanitizedTasks), project_id ?? null, now)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, name, JSON.stringify(sanitizedTasks), status, project_id ?? null, now)
 
     const plan = db
       .prepare('SELECT * FROM plans WHERE id = ?')
