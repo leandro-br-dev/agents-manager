@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useNavigate } from 'react-router';
-import { useGetPlan, useExecutePlan, useDeletePlan, useResumePlan } from '@/api/plans';
+import { useParams, useNavigate, useLocation } from 'react-router';
+import { useGetPlan, useExecutePlan, useDeletePlan, useResumePlan, useApprovePlan } from '@/api/plans';
 import { useLogStream } from '../hooks/useLogStream';
 import { cn } from '@/lib/utils';
-import { Trash2, Download, StopCircle, RotateCcw } from 'lucide-react';
+import { Trash2, Download, StopCircle, RotateCcw, CheckCircle } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -13,6 +13,7 @@ const statusColors = {
   running: 'bg-blue-100 text-blue-800',
   success: 'bg-green-100 text-green-800',
   failed: 'bg-red-100 text-red-800',
+  awaiting_approval: 'bg-amber-100 text-amber-800',
 };
 
 interface StatusBadgeProps {
@@ -35,10 +36,12 @@ function StatusBadge({ status }: StatusBadgeProps) {
 export function PlanDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: plan, isLoading: planLoading, error: planError } = useGetPlan(id || '');
   const executeMutation = useExecutePlan();
   const deletePlan = useDeletePlan();
   const resumePlan = useResumePlan();
+  const approvePlan = useApprovePlan();
   const queryClient = useQueryClient();
   const forceStop = useMutation({
     mutationFn: (planId: string) =>
@@ -51,6 +54,10 @@ export function PlanDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmForceStop, setConfirmForceStop] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Determine back navigation from router state
+  const backTo = location.state?.from || '/';
+  const backLabel = location.state?.fromLabel || 'Plans';
 
   const handleExport = () => {
     if (!plan) return;
@@ -121,12 +128,12 @@ export function PlanDetail() {
         <div className="px-4 py-5 sm:px-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-4">
-              <Link
-                to="/"
+              <button
+                onClick={() => navigate(backTo)}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
-                ← Plans
-              </Link>
+                ← {backLabel}
+              </button>
               <h1 className="text-2xl font-bold text-gray-900">{plan.name}</h1>
             </div>
             <StatusBadge status={plan.status} />
@@ -147,6 +154,17 @@ export function PlanDetail() {
                 className="rounded-md bg-gray-400 px-4 py-2 text-sm font-semibold text-white shadow-sm cursor-not-allowed"
               >
                 Awaiting daemon
+              </button>
+            )}
+            {plan.status === 'awaiting_approval' && (
+              <button
+                onClick={() => approvePlan.mutate(plan.id)}
+                disabled={approvePlan.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Approve and execute this plan"
+              >
+                <CheckCircle className="h-4 w-4" />
+                {approvePlan.isPending ? 'Approving...' : 'Approve & Run'}
               </button>
             )}
             {plan.status === 'running' && (

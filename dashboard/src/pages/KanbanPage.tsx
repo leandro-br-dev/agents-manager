@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Link2, LayoutGrid } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Link2, LayoutGrid, CheckCircle } from 'lucide-react';
 import { PageHeader, Button, Select, EmptyState, ConfirmDialog } from '@/components';
 import { useGetProjects } from '@/api/projects';
+import { useApprovePlan } from '@/api/plans';
 import {
   useGetAllKanbanTasks,
   useCreateKanbanTaskAny,
@@ -19,6 +20,7 @@ import {
 } from '@/api/kanban';
 
 export default function KanbanPage() {
+  const navigate = useNavigate();
   const { data: projects = [] } = useGetProjects();
   const [projectFilter, setProjectFilter] = useState<string>('');
 
@@ -27,6 +29,7 @@ export default function KanbanPage() {
   const updateTask = useUpdateKanbanTaskAny();
   const deleteTask = useDeleteKanbanTaskAny();
   const updatePipeline = useUpdateKanbanPipelineAny();
+  const approvePlan = useApprovePlan();
 
   // Filter tasks based on selected project
   const tasks = projectFilter
@@ -273,6 +276,14 @@ export default function KanbanPage() {
                           });
                         }
                       }}
+                      onApproveWorkflow={(workflowId) => {
+                        approvePlan.mutate(workflowId);
+                      }}
+                      onViewWorkflow={(workflowId) => {
+                        navigate(`/plans/${workflowId}`, {
+                          state: { from: '/kanban', fromLabel: 'Kanban' }
+                        });
+                      }}
                     />
                   ))}
                 </div>
@@ -428,6 +439,8 @@ interface TaskCardProps {
   onDragEnd: () => void;
   isDragging: boolean;
   onRetryPipeline: (taskId: string) => void;
+  onApproveWorkflow: (workflowId: string) => void;
+  onViewWorkflow: (workflowId: string) => void;
 }
 
 function TaskCard({
@@ -442,6 +455,8 @@ function TaskCard({
   onDragEnd,
   isDragging,
   onRetryPipeline,
+  onApproveWorkflow,
+  onViewWorkflow,
 }: TaskCardProps) {
   return (
     <div
@@ -519,14 +534,16 @@ function TaskCard({
         )}
 
         {task.workflow_id && (
-          <Link
-            to={`/plans/${task.workflow_id}`}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewWorkflow(task.workflow_id!);
+            }}
             className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
-            onClick={(e) => e.stopPropagation()}
           >
             <Link2 className="h-3 w-3" />
             Workflow {task.workflow_name ? `(${task.workflow_name})` : ''}
-          </Link>
+          </button>
         )}
       </div>
 
@@ -561,6 +578,21 @@ function TaskCard({
         >
           ↺ Retry pipeline
         </button>
+      )}
+
+      {/* Approve button for awaiting_approval pipelines */}
+      {task.pipeline_status === 'awaiting_approval' && task.workflow_id && (
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onApproveWorkflow(task.workflow_id!);
+            }}
+            className="text-xs px-2 py-1 bg-green-700 text-white rounded hover:bg-green-800 transition-colors flex items-center gap-1"
+          >
+            <CheckCircle className="h-3 w-3" /> Approve & Run
+          </button>
+        </div>
       )}
     </div>
   );

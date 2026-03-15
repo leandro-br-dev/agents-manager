@@ -4,6 +4,9 @@ import { apiClient } from './client';
 export interface KanbanTask {
   id: string;
   project_id: string;
+  project_name?: string;
+  project_description?: string;
+  project_settings?: Record<string, any>;
   title: string;
   description: string;
   column: 'backlog' | 'planning' | 'in_progress' | 'done';
@@ -59,6 +62,28 @@ export const PIPELINE_STATUS_CONFIG: Record<string, { label: string; className: 
   failed:             { label: '✗ Failed', className: 'text-red-600' },
 };
 
+const PROJECT_COLORS = [
+  'bg-blue-100 text-blue-700 border-blue-200',
+  'bg-green-100 text-green-700 border-green-200',
+  'bg-purple-100 text-purple-700 border-purple-200',
+  'bg-pink-100 text-pink-700 border-pink-200',
+  'bg-indigo-100 text-indigo-700 border-indigo-200',
+  'bg-teal-100 text-teal-700 border-teal-200',
+  'bg-orange-100 text-orange-700 border-orange-200',
+  'bg-red-100 text-red-700 border-red-200',
+  'bg-cyan-100 text-cyan-700 border-cyan-200',
+  'bg-emerald-100 text-emerald-700 border-emerald-200',
+];
+
+export function getProjectColor(projectId: string): string {
+  let hash = 0;
+  for (let i = 0; i < projectId.length; i++) {
+    hash = ((hash << 5) - hash) + projectId.charCodeAt(i);
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length];
+}
+
 export function useGetKanbanTasks(projectId: string) {
   return useQuery({
     queryKey: ['kanban', projectId],
@@ -68,12 +93,23 @@ export function useGetKanbanTasks(projectId: string) {
   });
 }
 
+export function useGetAllKanbanTasks() {
+  return useQuery({
+    queryKey: ['kanban', 'all'],
+    queryFn: () => apiClient.get<KanbanTask[]>(`/api/kanban`),
+    refetchInterval: 10000,
+  });
+}
+
 export function useCreateKanbanTask(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<KanbanTask>) =>
       apiClient.post<KanbanTask>(`/api/kanban/${projectId}`, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban', projectId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kanban', projectId] });
+      qc.invalidateQueries({ queryKey: ['kanban', 'all'] });
+    },
   });
 }
 
@@ -82,7 +118,10 @@ export function useUpdateKanbanTask(projectId: string) {
   return useMutation({
     mutationFn: ({ id, ...data }: Partial<KanbanTask> & { id: string }) =>
       apiClient.put<KanbanTask>(`/api/kanban/${projectId}/${id}`, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban', projectId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kanban', projectId] });
+      qc.invalidateQueries({ queryKey: ['kanban', 'all'] });
+    },
   });
 }
 
@@ -91,7 +130,10 @@ export function useDeleteKanbanTask(projectId: string) {
   return useMutation({
     mutationFn: (taskId: string) =>
       apiClient.delete(`/api/kanban/${projectId}/${taskId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban', projectId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kanban', projectId] });
+      qc.invalidateQueries({ queryKey: ['kanban', 'all'] });
+    },
   });
 }
 
@@ -100,6 +142,46 @@ export function useUpdateKanbanPipeline(projectId: string) {
   return useMutation({
     mutationFn: ({ taskId, data }: { taskId: string; data: { pipeline_status?: string; workflow_id?: string | null; error_message?: string } }) =>
       apiClient.patch<KanbanTask>(`/api/kanban/${projectId}/${taskId}/pipeline`, data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban', projectId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['kanban', projectId] });
+      qc.invalidateQueries({ queryKey: ['kanban', 'all'] });
+    },
+  });
+}
+
+// Project-agnostic hooks for multi-project views
+export function useCreateKanbanTaskAny() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, data }: { projectId: string; data: Partial<KanbanTask> }) =>
+      apiClient.post<KanbanTask>(`/api/kanban/${projectId}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban'] }),
+  });
+}
+
+export function useUpdateKanbanTaskAny() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, id, ...data }: { projectId: string; id: string } & Partial<KanbanTask>) =>
+      apiClient.put<KanbanTask>(`/api/kanban/${projectId}/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban'] }),
+  });
+}
+
+export function useDeleteKanbanTaskAny() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, taskId }: { projectId: string; taskId: string }) =>
+      apiClient.delete(`/api/kanban/${projectId}/${taskId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban'] }),
+  });
+}
+
+export function useUpdateKanbanPipelineAny() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, taskId, data }: { projectId: string; taskId: string; data: { pipeline_status?: string; workflow_id?: string | null; error_message?: string } }) =>
+      apiClient.patch<KanbanTask>(`/api/kanban/${projectId}/${taskId}/pipeline`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kanban'] }),
   });
 }

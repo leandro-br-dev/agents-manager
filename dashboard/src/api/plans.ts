@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './client';
 
-export type PlanStatus = 'pending' | 'running' | 'success' | 'failed';
+export type PlanStatus = 'pending' | 'running' | 'success' | 'failed' | 'awaiting_approval';
 
 export interface Task {
   id: string;
@@ -128,6 +128,19 @@ export const useResumePlan = () => {
   return useMutation({
     mutationFn: (id: string) =>
       apiClient.post<{ success: boolean; message: string }>(`/api/plans/${id}/resume`),
+    onSuccess: (_, planId) => {
+      queryClient.invalidateQueries({ queryKey: ['plans'] });
+      queryClient.invalidateQueries({ queryKey: ['plans', planId] });
+    },
+  });
+};
+
+export const useApprovePlan = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (planId: string) =>
+      apiClient.post<Plan>(`/api/plans/${planId}/approve`, {}),
     onSuccess: (_, planId) => {
       queryClient.invalidateQueries({ queryKey: ['plans'] });
       queryClient.invalidateQueries({ queryKey: ['plans', planId] });

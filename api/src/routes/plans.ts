@@ -219,6 +219,24 @@ router.get('/metrics', authenticateToken, (req: Request, res: Response) => {
   }
 })
 
+// POST /api/plans/:id/approve - Approve a plan (awaiting_approval → pending)
+router.post('/:id/approve', authenticateToken, (req: Request, res: Response) => {
+  try {
+    const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id) as any
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' })
+    }
+    if (plan.status !== 'awaiting_approval') {
+      return res.status(400).json({ error: `Plan status is '${plan.status}', not 'awaiting_approval'` })
+    }
+    db.prepare("UPDATE plans SET status = 'pending' WHERE id = ?").run(req.params.id)
+    const updated = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id)
+    res.json({ data: updated, error: null })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // GET /api/plans/:id - Get plan detail with log count
 router.get('/:id', authenticateToken, (req: Request, res: Response) => {
   try {
