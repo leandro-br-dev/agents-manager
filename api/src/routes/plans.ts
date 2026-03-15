@@ -219,6 +219,45 @@ router.get('/metrics', authenticateToken, (req: Request, res: Response) => {
   }
 })
 
+// PUT /api/plans/:id - Edit a plan (only pending or awaiting_approval)
+router.put('/:id', authenticateToken, (req: Request, res: Response) => {
+  try {
+    const plan = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id) as any
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' })
+    }
+
+    // Só permite editar planos que ainda não iniciaram
+    const editableStatuses = ['pending', 'awaiting_approval']
+    if (!editableStatuses.includes(plan.status)) {
+      return res.status(400).json({
+        error: `Cannot edit plan with status '${plan.status}'. Only pending or awaiting_approval plans can be edited.`
+      })
+    }
+
+    const { name, tasks } = req.body
+
+    db.prepare(`
+      UPDATE plans SET
+        name = COALESCE(?, name),
+        tasks = COALESCE(?, tasks)
+      WHERE id = ?
+    `).run(
+      name || null,
+      tasks ? JSON.stringify(tasks) : null,
+      req.params.id
+    )
+
+    const updated = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id) as any
+    if (updated.tasks && typeof updated.tasks === 'string') {
+      try { updated.tasks = JSON.parse(updated.tasks) } catch {}
+    }
+    res.json({ data: updated, error: null })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // POST /api/plans/:id/approve - Approve a plan (awaiting_approval → pending)
 router.post('/:id/approve', authenticateToken, (req: Request, res: Response) => {
   try {

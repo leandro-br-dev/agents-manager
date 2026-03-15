@@ -172,3 +172,29 @@ export const useGetMetrics = () => {
     refetchIntervalInBackground: false,
   });
 };
+
+export interface EditPlanRequest {
+  name?: string;
+  tasks?: Array<{
+    id: string;
+    name: string;
+    prompt: string;
+    cwd: string;
+    workspace: string;
+    tools?: string[];
+    permission_mode?: string;
+    depends_on?: string[];
+  }>;
+}
+
+export function useEditPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: EditPlanRequest & { id: string }) =>
+      apiClient.put(`/api/plans/${id}`, data),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['plan', vars.id] });
+      qc.invalidateQueries({ queryKey: ['plans'] });
+    },
+  });
+}

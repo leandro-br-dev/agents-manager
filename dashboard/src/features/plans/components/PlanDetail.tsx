@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router';
-import { useGetPlan, useExecutePlan, useDeletePlan, useResumePlan, useApprovePlan } from '@/api/plans';
+import { useGetPlan, useExecutePlan, useDeletePlan, useResumePlan, useApprovePlan, useEditPlan } from '@/api/plans';
 import { useLogStream } from '../hooks/useLogStream';
 import { cn } from '@/lib/utils';
-import { Trash2, Download, StopCircle, RotateCcw, CheckCircle } from 'lucide-react';
+import { Trash2, Download, StopCircle, RotateCcw, CheckCircle, Pencil } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/api/client';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { Button } from '@/components/Button';
+import { Input } from '@/components/Input';
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -33,6 +35,116 @@ function StatusBadge({ status }: StatusBadgeProps) {
   );
 }
 
+interface EditPlanModalProps {
+  plan: any;
+  onClose: () => void;
+}
+
+function EditPlanModal({ plan, onClose }: EditPlanModalProps) {
+  const [name, setName] = useState(plan.name);
+  const [tasks, setTasks] = useState<any[]>(
+    Array.isArray(plan.tasks) ? plan.tasks : []
+  );
+  const editPlan = useEditPlan();
+
+  const handleSave = async () => {
+    await editPlan.mutateAsync({ id: plan.id, name, tasks });
+    onClose();
+  };
+
+  const updateTask = (index: number, field: string, value: string) => {
+    setTasks(prev => prev.map((t, i) => i === index ? { ...t, [field]: value } : t));
+  };
+
+  const moveTask = (index: number, dir: 'up' | 'down') => {
+    const next = [...tasks];
+    const swap = dir === 'up' ? index - 1 : index + 1;
+    if (swap < 0 || swap >= next.length) return;
+    [next[index], next[swap]] = [next[swap], next[index]];
+    setTasks(next);
+  };
+
+  const removeTask = (index: number) => {
+    setTasks(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addTask = () => {
+    setTasks(prev => [...prev, {
+      id: `task-${Date.now()}`,
+      name: '',
+      prompt: '',
+      cwd: '',
+      workspace: '',
+      tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob'],
+      permission_mode: 'acceptEdits',
+      depends_on: [],
+    }]);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white rounded-lg border border-gray-200 p-6 max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col gap-4">
+        <h3 className="text-sm font-semibold text-gray-900">Edit Workflow</h3>
+
+        {/* Nome */}
+        <Input
+          label="Plan name"
+          value={name}
+          onChange={e => setName(e.target.value)}
+        />
+
+        {/* Tasks */}
+        <div className="flex-1 overflow-y-auto space-y-3">
+          {tasks.map((task, i) => (
+            <div key={task.id || i} className="border border-gray-200 rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500">Task {i + 1}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => moveTask(i, 'up')} disabled={i === 0}
+                    className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30">▲</button>
+                  <button onClick={() => moveTask(i, 'down')} disabled={i === tasks.length - 1}
+                    className="p-1 text-gray-400 hover:text-gray-700 disabled:opacity-30">▼</button>
+                  <button onClick={() => removeTask(i)}
+                    className="p-1 text-gray-400 hover:text-red-500">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              <Input label="Name" value={task.name}
+                onChange={e => updateTask(i, 'name', e.target.value)} />
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Prompt</label>
+                <textarea
+                  value={task.prompt}
+                  onChange={e => updateTask(i, 'prompt', e.target.value)}
+                  rows={4}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+              </div>
+              <Input label="cwd" value={task.cwd}
+                onChange={e => updateTask(i, 'cwd', e.target.value)} />
+              <Input label="workspace" value={task.workspace}
+                onChange={e => updateTask(i, 'workspace', e.target.value)} />
+            </div>
+          ))}
+          <button onClick={addTask}
+            className="w-full border border-dashed border-gray-300 rounded-lg p-2 text-xs text-gray-500 hover:border-gray-500 hover:text-gray-700 transition-colors">
+            + Add task
+          </button>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-gray-200">
+          <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" size="sm" onClick={handleSave} loading={editPlan.isPending}>
+            Save changes
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PlanDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -53,6 +165,7 @@ export function PlanDetail() {
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmForceStop, setConfirmForceStop] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Determine back navigation from router state
@@ -149,23 +262,43 @@ export function PlanDetail() {
               Export
             </button>
             {plan.status === 'pending' && (
-              <button
-                disabled
-                className="rounded-md bg-gray-400 px-4 py-2 text-sm font-semibold text-white shadow-sm cursor-not-allowed"
-              >
-                Awaiting daemon
-              </button>
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowEditModal(true)}
+                  title="Edit this plan"
+                >
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </Button>
+                <button
+                  disabled
+                  className="rounded-md bg-gray-400 px-4 py-2 text-sm font-semibold text-white shadow-sm cursor-not-allowed"
+                >
+                  Awaiting daemon
+                </button>
+              </>
             )}
             {plan.status === 'awaiting_approval' && (
-              <button
-                onClick={() => approvePlan.mutate(plan.id)}
-                disabled={approvePlan.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Approve and execute this plan"
-              >
-                <CheckCircle className="h-4 w-4" />
-                {approvePlan.isPending ? 'Approving...' : 'Approve & Run'}
-              </button>
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowEditModal(true)}
+                  title="Edit this plan"
+                >
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </Button>
+                <button
+                  onClick={() => approvePlan.mutate(plan.id)}
+                  disabled={approvePlan.isPending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Approve and execute this plan"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  {approvePlan.isPending ? 'Approving...' : 'Approve & Run'}
+                </button>
+              </>
             )}
             {plan.status === 'running' && (
               <button
@@ -373,6 +506,14 @@ export function PlanDetail() {
         onCancel={() => setConfirmForceStop(false)}
         loading={forceStop.isPending}
       />
+
+      {/* Edit Plan Modal */}
+      {showEditModal && (
+        <EditPlanModal
+          plan={plan}
+          onClose={() => setShowEditModal(false)}
+        />
+      )}
     </div>
   );
 }
