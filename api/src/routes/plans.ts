@@ -272,6 +272,16 @@ router.post('/:id/approve', authenticateToken, (req: Request, res: Response) => 
       return res.status(400).json({ error: `Plan status is '${plan.status}', not 'awaiting_approval'` })
     }
     db.prepare("UPDATE plans SET status = 'pending' WHERE id = ?").run(req.params.id)
+
+    // Atualiza kanban task vinculada para in_progress
+    db.prepare(`
+      UPDATE kanban_tasks
+      SET "column" = 'in_progress',
+          pipeline_status = 'running',
+          updated_at = datetime('now')
+      WHERE workflow_id = ?
+    `).run(req.params.id)
+
     const updated = db.prepare('SELECT * FROM plans WHERE id = ?').get(req.params.id)
     res.json({ data: updated, error: null })
   } catch (err: any) {

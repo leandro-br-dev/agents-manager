@@ -499,7 +499,7 @@ async def sync_workflow_status(client) -> None:
                             error_message="Workflow failed"
                         )
 
-                    elif plan_status == "running" and task.get("pipeline_status") in ("awaiting_approval",):
+                    elif plan_status in ("pending", "running") and task.get("pipeline_status") in ("awaiting_approval",):
                         # Usuário aprovou manualmente no dashboard — move coluna e atualiza status
                         await client._put(f"/kanban/{project_id}/{task_id}", {
                             "column": "in_progress"
