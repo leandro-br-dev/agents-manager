@@ -438,7 +438,7 @@ async def sync_workflow_status(client) -> None:
     Sincroniza status de workflows vinculados a kanban tasks.
 
     Verifica se workflows vinculados a kanban tasks concluíram e atualiza
-    o status das tasks correspondentes.
+    o status das tasks correspondentes, considerando result_status da review.
 
     Args:
         client: DaemonClient instance
@@ -473,16 +473,24 @@ async def sync_workflow_status(client) -> None:
                         continue
 
                     plan_status = plan.get("status")
+                    result_status = plan.get("result_status")  # success|partial|needs_rework|None
                     task_id = task["id"]
 
-                    if plan_status == "success" and task.get("column") != "done":
-                        await client._put(f"/kanban/{project_id}/{task_id}", {
-                            "column": "done"
-                        })
-                        await client.update_kanban_pipeline(
-                            project_id, task_id, pipeline_status="done"
-                        )
-                        logger.success(f"[KanbanPipeline] Task completed, moved to done: {task_id}")
+                    if plan_status == "success":
+                        if result_status == "needs_rework":
+                            # Volta para backlog e cria nova task de rework
+                            await _handle_needs_rework(task, plan, project_id, client)
+                        else:
+                            # success ou partial → move para done
+                            result_label = ' (partial)' if result_status == 'partial' else ''
+                            notes = plan.get('result_notes', '')
+                            await client._patch(f'/kanban/{project_id}/{task_id}', {
+                                'column': 'done',
+                                'pipeline_status': 'done',
+                                'result_status': result_status or 'success',
+                                'result_notes': notes,
+                            })
+                            logger.success(f'[KanbanPipeline] Task done{result_label}: {task_id}')
 
                     elif plan_status == "failed" and task.get("pipeline_status") != "failed":
                         await client.update_kanban_pipeline(
@@ -505,6 +513,44 @@ async def sync_workflow_status(client) -> None:
                     logger.warning(f"Failed to sync workflow {workflow_id}: {e}")
     except Exception as e:
         logger.warning(f"[KanbanPipeline] Sync error: {e}")
+
+
+async def _handle_needs_rework(task: dict, plan: dict, project_id: str, client) -> None:
+    """Retorna task para backlog e cria nova task de rework com contexto."""
+    task_id = task['id']
+    result_notes = plan.get('result_notes', '')
+    plan_name = plan.get('name', 'Unknown')
+
+    # Volta a task atual para backlog com anotação
+    await client._patch(f'/kanban/{project_id}/{task_id}', {
+        'column': 'backlog',
+        'pipeline_status': 'idle',
+        'workflow_id': None,
+        'result_status': 'needs_rework',
+        'result_notes': result_notes,
+        'error_message': '',
+    })
+
+    # Cria nova task de rework no backlog
+    rework_title = f'[Rework] {task.get("title", "Task")}'
+    rework_description = (
+        f'The previous workflow "{plan_name}" completed with needs_rework status.\n\n'
+        f'**Reviewer notes:**\n{result_notes}\n\n'
+        f'**Original task description:**\n{task.get("description", "")}'
+    )
+
+    try:
+        await client._post(f'/kanban/{project_id}', {
+            'title': rework_title,
+            'description': rework_description,
+            'column': 'backlog',
+            'priority': max(1, task.get('priority', 3) - 1),  # aumenta prioridade
+        })
+        logger.info(f'[KanbanPipeline] Rework task created for {task_id}')
+    except Exception as e:
+        logger.warning(f'Failed to create rework task: {e}')
+
+    logger.warning(f'[KanbanPipeline] Task needs rework, moved to backlog: {task_id}')
 
 
 async def poll_kanban_tasks(client) -> None:

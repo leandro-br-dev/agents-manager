@@ -27,6 +27,9 @@ interface StartPlanBody {
 interface CompletePlanBody {
   status: 'success' | 'failed'
   result: string
+  result_status?: 'success' | 'partial' | 'needs_rework'
+  result_notes?: string
+  structured_output?: any
 }
 
 interface LogEntry {
@@ -102,7 +105,7 @@ router.post('/', authenticateToken, (req: Request, res: Response) => {
 
     // Validate and set status (default to 'pending')
     const allowedStatuses = ['pending', 'awaiting_approval']
-    const status = allowedStatuses.includes(requestedStatus) ? requestedStatus : 'pending'
+    const status = requestedStatus && allowedStatuses.includes(requestedStatus) ? requestedStatus : 'pending'
 
     const id = randomUUID()
     const now = new Date().toISOString()
@@ -363,7 +366,7 @@ router.post('/:id/start', authenticateToken, (req: Request, res: Response) => {
 router.post('/:id/complete', authenticateToken, (req: Request, res: Response) => {
   try {
     const { id } = req.params
-    const { status, result }: CompletePlanBody = req.body
+    const { status, result, result_status, result_notes, structured_output }: CompletePlanBody = req.body
 
     if (!status || !result) {
       return res.status(400).json({ data: null, error: 'status and result are required' })
@@ -391,9 +394,20 @@ router.post('/:id/complete', authenticateToken, (req: Request, res: Response) =>
       UPDATE plans
       SET status = ?,
           result = ?,
-          completed_at = ?
+          completed_at = ?,
+          result_status = COALESCE(?, result_status),
+          result_notes = COALESCE(?, result_notes),
+          structured_output = COALESCE(?, structured_output)
       WHERE id = ?
-    `).run(status, result, now, id)
+    `).run(
+      status,
+      result,
+      now,
+      result_status || null,
+      result_notes || null,
+      structured_output ? JSON.stringify(structured_output) : null,
+      id
+    )
 
     const updatedPlan = db
       .prepare('SELECT * FROM plans WHERE id = ?')

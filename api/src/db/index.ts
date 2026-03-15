@@ -186,6 +186,26 @@ export function initDatabase() {
     }
   }
 
+  // Add result_status column to plans table if it doesn't exist
+  try {
+    db.exec("ALTER TABLE plans ADD COLUMN result_status TEXT CHECK(result_status IN ('success','partial','needs_rework'))")
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding result_status column:', e.message)
+    }
+  }
+
+  // Add result_notes column to plans table if it doesn't exist
+  try {
+    db.exec('ALTER TABLE plans ADD COLUMN result_notes TEXT DEFAULT \'\'')
+  } catch (e: any) {
+    // Column already exists - ignore error
+    if (!e.message.includes('duplicate column name')) {
+      console.warn('Warning adding result_notes column:', e.message)
+    }
+  }
+
   // Create chat_sessions table
   try {
     db.exec(`

@@ -533,6 +533,12 @@ function TaskCard({
           </span>
         )}
 
+        {task.result_notes && task.result_status && task.result_status !== 'success' && (
+          <p className="text-xs text-gray-500 mt-2 italic line-clamp-2" title={task.result_notes}>
+            💬 {task.result_notes}
+          </p>
+        )}
+
         {task.workflow_id && (
           <button
             onClick={(e) => {

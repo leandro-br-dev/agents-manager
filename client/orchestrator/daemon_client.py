@@ -165,17 +165,23 @@ class DaemonClient:
         plan_id: str,
         status: str,
         result: str | None = None,
+        result_status: str | None = None,
+        result_notes: str | None = None,
+        structured_output: dict[str, Any] | None = None,
     ) -> PlanResponse:
         """
         Mark a plan as completed.
 
         POST /api/plans/:id/complete
-        Body: {status: "success" | "failed", result: string}
+        Body: {status: "success" | "failed", result: string, result_status?, result_notes?, structured_output?}
 
         Args:
             plan_id: ID of the plan
             status: Final status ("success" or "failed")
             result: Optional result message
+            result_status: Optional detailed status (success | partial | needs_rework)
+            result_notes: Optional summary notes from review
+            structured_output: Optional structured output (review JSON)
 
         Returns:
             PlanResponse with data=updated_plan or error
@@ -184,6 +190,12 @@ class DaemonClient:
             body = {"status": status}
             if result is not None:
                 body["result"] = result
+            if result_status is not None:
+                body["result_status"] = result_status
+            if result_notes is not None:
+                body["result_notes"] = result_notes
+            if structured_output is not None:
+                body["structured_output"] = structured_output
 
             response = self._client.post(
                 f"/plans/{plan_id}/complete",

@@ -24,9 +24,15 @@ export interface Plan {
   completed_at?: string;
   updated_at: string;
   result?: string;
+  result_status?: 'success' | 'partial' | 'needs_rework';
+  result_notes?: string;
   structured_output?: {
     type: string;
     content: any;
+    result_status?: string;
+    result_notes?: string;
+    issues?: Array<{ severity: string; description: string; location?: string }>;
+    next_steps?: string;
   };
 }
 

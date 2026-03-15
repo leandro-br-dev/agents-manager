@@ -448,6 +448,85 @@ export function PlanDetail() {
         </div>
       )}
 
+      {/* Review Result */}
+      {plan.result_status && (() => {
+        const isSuccess = plan.result_status === 'success';
+        const isPartial = plan.result_status === 'partial';
+        const bgClass = isSuccess ? 'bg-green-50 border-green-200' :
+                        isPartial ? 'bg-amber-50 border-amber-200' :
+                        'bg-red-50 border-red-200';
+        const textClass = isSuccess ? 'text-green-900' :
+                         isPartial ? 'text-amber-900' :
+                         'text-red-900';
+        const badgeClass = isSuccess ? 'bg-green-100 text-green-800' :
+                           isPartial ? 'bg-amber-100 text-amber-800' :
+                           'bg-red-100 text-red-800';
+        const statusLabel = isSuccess ? '✓ Success' :
+                            isPartial ? '◐ Partial' :
+                            '↺ Needs Rework';
+
+        return (
+          <div className={`shadow sm:rounded-lg border ${bgClass}`}>
+            <div className="px-4 py-5 sm:px-6">
+              <h2 className={`text-lg font-semibold leading-7 mb-4 ${textClass}`}>
+                Review Result
+              </h2>
+              <div className="mb-3">
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${badgeClass}`}>
+                  {statusLabel}
+                </span>
+              </div>
+            {plan.result_notes && (
+              <div className="mb-3">
+                <h3 className="text-sm font-medium text-gray-700 mb-1">Review Notes</h3>
+                <p className="text-sm text-gray-900 bg-white bg-opacity-60 rounded-md p-3">
+                  {plan.result_notes}
+                </p>
+              </div>
+            )}
+            {plan.structured_output?.issues && plan.structured_output.issues.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Issues Found</h3>
+                <div className="space-y-2">
+                  {plan.structured_output.issues.map((issue: any, i: number) => (
+                    <div key={i} className={`bg-white bg-opacity-60 rounded-md p-3 border-l-4 ${
+                      issue.severity === 'critical' ? 'border-red-500' :
+                      issue.severity === 'major' ? 'border-orange-500' :
+                      'border-yellow-500'
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <span className={`text-xs font-semibold uppercase rounded px-1.5 py-0.5 ${
+                          issue.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                          issue.severity === 'major' ? 'bg-orange-100 text-orange-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {issue.severity}
+                        </span>
+                        <p className="text-sm text-gray-900 flex-1">{issue.description}</p>
+                      </div>
+                      {issue.location && (
+                        <p className="text-xs text-gray-500 font-mono mt-1 ml-1">
+                          📍 {issue.location}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {plan.structured_output?.next_steps && (
+              <div className="mt-3">
+                <h3 className="text-sm font-medium text-gray-700 mb-1">Next Steps</h3>
+                <p className="text-sm text-gray-900 bg-white bg-opacity-60 rounded-md p-3">
+                  {plan.structured_output.next_steps}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      })()}
+
       {/* Logs */}
       <div className="bg-white shadow sm:rounded-lg">
         <div className="px-4 py-5 sm:px-6">

@@ -79,6 +79,35 @@ def extract_structured_output(full_text: str) -> dict | None:
     return None
 
 
+def extract_review_from_output(text: str) -> dict | None:
+    """
+    Extract JSON review from <review>...</review> tags.
+
+    This function extracts structured review output from agent text.
+    Reviews are used by reviewer agents to provide structured feedback.
+
+    Args:
+        text: Agent output text that may contain <review> tags
+
+    Returns:
+        Parsed review dict with result_status, result_notes, issues, next_steps
+        or None if no valid review found
+    """
+    parts = text.split('<review>')
+    for i in range(1, len(parts)):
+        closing = parts[i].find('</review>')
+        if closing == -1:
+            continue
+        raw = parts[i][:closing].strip()
+        try:
+            parsed = json.loads(raw)
+            if parsed.get('result_status') in ('success', 'partial', 'needs_rework'):
+                return parsed
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return None
+
+
 def _check_deny_rules(tool_name: str, tool_input: dict, deny_rules: list[str]) -> tuple[bool, str]:
     """
     Check if a tool operation matches any deny rule.
@@ -802,16 +831,18 @@ async def run_plan(
     plan: Plan,
     log_callback: callable[[str, str, str], None] | None = None,
     client: Any | None = None,
-) -> bool:
+) -> tuple[bool, dict | None]:
     """
     Execute the full plan in dependency order.
 
     Args:
         plan: Plan to execute
         log_callback: Optional callback(task_id, level, message) for log collection
+        client: Optional DaemonClient for extracting reviews
 
     Returns:
-        True if all tasks succeeded
+        Tuple of (success: bool, review: dict | None)
+        review is the extracted <review> JSON if present in task outputs
     """
     logger.plan_start(plan.name)
 
@@ -833,7 +864,18 @@ async def run_plan(
             for f in failed:
                 logger.error(f"Task '{f.task_id}' failed — stopping plan.")
             logger.plan_done(plan.name, success=False)
-            return False
+            return False, None
 
     logger.plan_done(plan.name, success=True)
-    return True
+
+    # Extract review from accumulated task outputs
+    review = None
+    if context:
+        # Concatenate all task outputs
+        full_output = '\n'.join(r.output for r in context.values() if r.output)
+        if full_output:
+            review = extract_review_from_output(full_output)
+            if review:
+                logger.info(f"Extracted review from plan output: result_status={review.get('result_status')}")
+
+    return True, review
