@@ -15,6 +15,7 @@ export type Environment = {
 
 export type ProjectSettings = {
   auto_approve_workflows: boolean
+  auto_move_enabled: boolean
   planning_agent_workspace?: string
   max_concurrent_active_tasks?: number
 }

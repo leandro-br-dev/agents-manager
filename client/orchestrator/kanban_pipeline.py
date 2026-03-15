@@ -553,6 +553,60 @@ async def _handle_needs_rework(task: dict, plan: dict, project_id: str, client) 
     logger.warning(f'[KanbanPipeline] Task needs rework, moved to backlog: {task_id}')
 
 
+async def auto_move_tasks(project_id: str, settings: dict, client) -> None:
+    """
+    Move tasks automaticamente entre colunas quando habilitado.
+
+    Args:
+        project_id: ID do projeto
+        settings: Configurações do projeto (deve conter auto_move_enabled)
+        client: DaemonClient instance
+    """
+    if not settings.get('auto_move_enabled', False):
+        return
+
+    try:
+        tasks_resp = await client._get(f'/kanban/{project_id}')
+        tasks = tasks_resp if isinstance(tasks_resp, list) else (
+            tasks_resp.get('data', []) if isinstance(tasks_resp, dict) else []
+        )
+
+        # Condição de parada: há tasks needs_rework não resolvidas?
+        needs_rework = [
+            t for t in tasks
+            if t.get('result_status') == 'needs_rework'
+            and t.get('column') == 'backlog'
+            and t.get('title', '').startswith('[Rework]')
+        ]
+        if needs_rework:
+            logger.debug(f'[AutoMove] Paused: {len(needs_rework)} rework task(s) pending resolution')
+            return
+
+        # Verifica se há tasks em planning
+        in_planning = [t for t in tasks if t.get('column') == 'planning']
+        max_concurrent = settings.get('max_concurrent_active_tasks', 1)
+
+        if len(in_planning) < max_concurrent:
+            # Pega a task de maior prioridade no backlog (menor número = maior prioridade)
+            backlog = sorted(
+                [
+                    t for t in tasks
+                    if t.get('column') == 'backlog'
+                    and t.get('pipeline_status', 'idle') == 'idle'
+                ],
+                key=lambda t: (t.get('priority', 99), t.get('created_at', ''))
+            )
+            if backlog:
+                next_task = backlog[0]
+                await client._patch(f'/kanban/{project_id}/{next_task["id"]}', {
+                    'column': 'planning',
+                    'pipeline_status': 'idle',
+                })
+                logger.info(f'[AutoMove] Moved "{next_task["title"]}" backlog → planning')
+    except Exception as e:
+        logger.warning(f'[AutoMove] Error: {e}')
+
+
 async def poll_kanban_tasks(client) -> None:
     """
     Verifica todos os projetos por kanban tasks ativas sem workflow.
@@ -566,6 +620,18 @@ async def poll_kanban_tasks(client) -> None:
             project_id = project.get("id")
             if not project_id:
                 continue
+
+            # Parse settings
+            settings = project.get('settings', {})
+            if isinstance(settings, str):
+                try:
+                    settings = json.loads(settings)
+                except Exception:
+                    settings = {}
+
+            # Auto-move antes de processar
+            await auto_move_tasks(project_id, settings, client)
+
             pending = await client.get_pending_kanban_tasks(project_id)
             for task in pending:
                 # Processa em background sem bloquear o daemon loop

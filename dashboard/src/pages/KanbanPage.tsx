@@ -1,15 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Link2, LayoutGrid, CheckCircle } from 'lucide-react';
-import { PageHeader, Button, Select, EmptyState, ConfirmDialog } from '@/components';
-import { useGetProjects } from '@/api/projects';
+import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Link2, LayoutGrid, CheckCircle, Zap, Play } from 'lucide-react';
+import { PageHeader, Button, Select, EmptyState, ConfirmDialog, Switch } from '@/components';
+import { useGetProjects, useUpdateProject } from '@/api/projects';
 import { useApprovePlan } from '@/api/plans';
+import { useToast } from '@/contexts/ToastContext';
 import {
   useGetAllKanbanTasks,
   useCreateKanbanTaskAny,
   useUpdateKanbanTaskAny,
   useDeleteKanbanTaskAny,
   useUpdateKanbanPipelineAny,
+  useAutoMoveKanbanAny,
   getProjectColor,
   COLUMNS,
   PRIORITY_LABELS,
@@ -30,11 +32,35 @@ export default function KanbanPage() {
   const deleteTask = useDeleteKanbanTaskAny();
   const updatePipeline = useUpdateKanbanPipelineAny();
   const approvePlan = useApprovePlan();
+  const autoMove = useAutoMoveKanbanAny();
+  const { showAutoMoveToast, showError, showSuccess } = useToast();
+
+  // Auto-move mutations
+  const updateProject = useUpdateProject();
+
+  // Track recently auto-moved tasks for visual indicator
+  const [recentlyMovedTasks, setRecentlyMovedTasks] = useState<Set<string>>(new Set());
+  const recentlyMovedTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   // Filter tasks based on selected project
   const tasks = projectFilter
     ? allTasks.filter((task) => task.project_id === projectFilter)
     : allTasks;
+
+  // Initialize auto-move state from project settings
+  useEffect(() => {
+    if (projectFilter) {
+      const project = projects.find(p => p.id === projectFilter);
+      setAutoMoveEnabled(project?.settings?.auto_move_enabled ?? false);
+      setAutoMoveProjectId(projectFilter);
+    } else if (projects.length === 1) {
+      setAutoMoveEnabled(projects[0]?.settings?.auto_move_enabled ?? false);
+      setAutoMoveProjectId(projects[0]?.id ?? '');
+    } else {
+      setAutoMoveEnabled(false);
+      setAutoMoveProjectId('');
+    }
+  }, [projectFilter, projects]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<KanbanTask | null>(null);
@@ -49,6 +75,10 @@ export default function KanbanPage() {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [createProjectId, setCreateProjectId] = useState<string>('');
+
+  // Auto-move state
+  const [autoMoveEnabled, setAutoMoveEnabled] = useState(false);
+  const [autoMoveProjectId, setAutoMoveProjectId] = useState<string>('');
 
   const handleOpenCreate = (column?: KanbanTask['column']) => {
     setEditingTask(null);
@@ -126,6 +156,118 @@ export default function KanbanPage() {
     }
   };
 
+  const handleToggleAutoMove = (enabled: boolean) => {
+    setAutoMoveEnabled(enabled);
+    if (autoMoveProjectId) {
+      const project = projects.find(p => p.id === autoMoveProjectId);
+      updateProject.mutate({
+        id: autoMoveProjectId,
+        settings: {
+          auto_move_enabled: enabled,
+          auto_approve_workflows: project?.settings?.auto_approve_workflows ?? false
+        }
+      });
+    }
+  };
+
+  const handleRunAutoMove = () => {
+    if (!autoMoveProjectId) return;
+
+    autoMove.mutate(autoMoveProjectId, {
+      onSuccess: (result) => {
+        if (result.moved_tasks?.length > 0) {
+          showSuccess(
+            `Auto-moved ${result.moved_tasks.length} task${result.moved_tasks.length > 1 ? 's' : ''}`,
+            'Tasks have been moved based on their status'
+          );
+
+          // Mark recently moved tasks for visual indicator
+          const newMovedTasks = new Set(recentlyMovedTasks);
+          result.moved_tasks.forEach((move) => {
+            newMovedTasks.add(move.task.id);
+            showAutoMoveToast(move.task.title, move.from_column, move.to_column);
+
+            // Clear the timeout if it exists
+            const existingTimeout = recentlyMovedTimeoutsRef.current.get(move.task.id);
+            if (existingTimeout) {
+              clearTimeout(existingTimeout);
+            }
+
+            // Remove the visual indicator after 5 seconds
+            const timeout = setTimeout(() => {
+              setRecentlyMovedTasks((prev) => {
+                const next = new Set(prev);
+                next.delete(move.task.id);
+                return next;
+              });
+            }, 5000);
+
+            recentlyMovedTimeoutsRef.current.set(move.task.id, timeout);
+          });
+
+          setRecentlyMovedTasks(newMovedTasks);
+        }
+      },
+      onError: (error: Error) => {
+        showError('Auto-move failed', error.message);
+      },
+    });
+  };
+
+  // Auto-move polling
+  useEffect(() => {
+    if (!autoMoveEnabled || !autoMoveProjectId) return;
+
+    const interval = setInterval(() => {
+      autoMove.mutate(autoMoveProjectId, {
+        onSuccess: (result) => {
+          if (result.moved_tasks?.length > 0) {
+            // Mark recently moved tasks for visual indicator
+            const newMovedTasks = new Set(recentlyMovedTasks);
+            result.moved_tasks.forEach((move) => {
+              newMovedTasks.add(move.task.id);
+              showAutoMoveToast(move.task.title, move.from_column, move.to_column);
+
+              // Clear the timeout if it exists
+              const existingTimeout = recentlyMovedTimeoutsRef.current.get(move.task.id);
+              if (existingTimeout) {
+                clearTimeout(existingTimeout);
+              }
+
+              // Remove the visual indicator after 5 seconds
+              const timeout = setTimeout(() => {
+                setRecentlyMovedTasks((prev) => {
+                  const next = new Set(prev);
+                  next.delete(move.task.id);
+                  return next;
+                });
+              }, 5000);
+
+              recentlyMovedTimeoutsRef.current.set(move.task.id, timeout);
+            });
+
+            setRecentlyMovedTasks(newMovedTasks);
+          }
+        },
+        onError: (error: Error) => {
+          console.error('Auto-move polling error:', error);
+          // Don't show error toast for polling errors to avoid spam
+          // Just log it for debugging
+        },
+      });
+    }, 15000); // Poll every 15 seconds
+
+    return () => clearInterval(interval);
+  }, [autoMoveEnabled, autoMoveProjectId, autoMove, showAutoMoveToast]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      recentlyMovedTimeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+      recentlyMovedTimeoutsRef.current.clear();
+    };
+  }, []);
+
   const getTasksByColumn = (columnId: string) => {
     return tasks
       .filter((task) => task.column === columnId)
@@ -159,6 +301,29 @@ export default function KanbanPage() {
         }
         actions={
           <div className="flex items-center gap-3">
+            {autoMoveProjectId && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-md">
+                <Zap className={`h-4 w-4 ${autoMoveEnabled ? 'text-yellow-500' : 'text-gray-400'}`} />
+                <span className="text-sm text-gray-700">Auto-move</span>
+                <Switch
+                  checked={autoMoveEnabled}
+                  onCheckedChange={handleToggleAutoMove}
+                  disabled={updateProject.isPending}
+                />
+                {autoMoveEnabled && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRunAutoMove}
+                    disabled={autoMove.isPending || !autoMoveEnabled}
+                    title="Run auto-move now"
+                    className="p-1 ml-1"
+                  >
+                    <Play className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            )}
             {projects.length > 0 && (
               <Select
                 value={projectFilter}
@@ -262,6 +427,7 @@ export default function KanbanPage() {
                         setDragOverColumn(null);
                       }}
                       isDragging={draggedTaskId === task.id}
+                      recentlyMoved={recentlyMovedTasks.has(task.id)}
                       onRetryPipeline={(taskId) => {
                         const task = allTasks.find(t => t.id === taskId);
                         if (task) {
@@ -441,6 +607,7 @@ interface TaskCardProps {
   onRetryPipeline: (taskId: string) => void;
   onApproveWorkflow: (workflowId: string) => void;
   onViewWorkflow: (workflowId: string) => void;
+  recentlyMoved?: boolean;
 }
 
 function TaskCard({
@@ -457,6 +624,7 @@ function TaskCard({
   onRetryPipeline,
   onApproveWorkflow,
   onViewWorkflow,
+  recentlyMoved = false,
 }: TaskCardProps) {
   return (
     <div
@@ -466,10 +634,17 @@ function TaskCard({
         e.dataTransfer.effectAllowed = 'move';
       }}
       onDragEnd={onDragEnd}
-      className={`group bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-all cursor-grab active:cursor-grabbing ${
+      className={`group bg-white rounded-lg border border-gray-200 p-3 hover:border-gray-300 transition-all cursor-grab active:cursor-grabbing relative ${
         isDragging ? 'opacity-50 scale-95' : ''
-      }`}
+      } ${recentlyMoved ? 'ring-2 ring-yellow-400 ring-offset-1' : ''}`}
     >
+      {/* Auto-move badge */}
+      {recentlyMoved && (
+        <div className="absolute -top-1 -right-1 bg-yellow-400 text-yellow-900 text-xs font-bold px-1.5 py-0.5 rounded-full shadow-sm z-10 animate-pulse">
+          <Zap className="h-3 w-3" />
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-2 mb-2">
         <h4 className="text-sm font-semibold text-gray-900 flex-1">{task.title}</h4>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
