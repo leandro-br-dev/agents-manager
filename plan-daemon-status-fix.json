@@ -1,0 +1,194 @@
+{
+  "name": "Fix Agent Daemon Status Synchronization",
+  "description": "Fix the issue where the Settings page shows 'Agent Daemon: Stopped' even when the daemon is running (started via start.sh). The daemon status check only tracks daemons started via the API endpoint, not those started manually.",
+  "agent_type": "planner",
+  "version": "1.0.0",
+  "tasks": [
+    {
+      "id": "task-1",
+      "name": "Modify client daemon to write PID file on startup",
+      "description": "Update /root/projects/agents-manager/client/main.py to write a PID file when the daemon starts in daemon mode. The PID file should be written to a predictable location (e.g., /tmp/agents-manager-daemon.pid or in the client directory). Also ensure the PID file is removed on graceful shutdown.",
+      "cwd": "/root/projects/agents-manager/client",
+      "depends_on": [],
+      "tools": ["Read", "Edit", "Bash"],
+      "agent_role": "coder-backend",
+      "context": {
+        "file": "/root/projects/agents-manager/client/main.py",
+        "pid_file_location": "/tmp/agents-manager-daemon.pid",
+        "key_changes": [
+          "Import os and signal modules for PID file management",
+          "Add write_pid_file() function to write PID to file",
+          "Add remove_pid_file() function to clean up on shutdown",
+          "Call write_pid_file() at the start of run_daemon() function",
+          "Call remove_pid_file() in the finally block of run_daemon() function",
+          "Add signal handler to ensure PID file cleanup on SIGTERM/SIGINT"
+        ]
+      },
+      "verification": {
+        "type": "manual_test",
+        "steps": [
+          "Start the daemon manually: bash start.sh",
+          "Check that PID file exists: cat /tmp/agents-manager-daemon.pid",
+          "Verify PID matches actual daemon process: ps aux | grep 'python main.py --daemon'",
+          "Stop the daemon and verify PID file is removed"
+        ]
+      }
+    },
+    {
+      "id": "task-2",
+      "name": "Update API daemon status check to use PID file",
+      "description": "Modify /root/projects/agents-manager/api/src/routes/daemon.ts to check the PID file when the internal daemonProcess reference is null. Update getDaemonStatus() function to: 1) First check if daemonProcess is set (current behavior), 2) If not, read the PID file, 3) If PID file exists, verify the process is running using process.kill(pid, 0), 4) Return 'running' if process exists, 'stopped' otherwise.",
+      "cwd": "/root/projects/agents-manager/api",
+      "depends_on": ["task-1"],
+      "tools": ["Read", "Edit", "Bash"],
+      "agent_role": "coder-backend",
+      "context": {
+        "file": "/root/projects/agents-manager/api/src/routes/daemon.ts",
+        "pid_file_location": "/tmp/agents-manager-daemon.pid",
+        "key_changes": [
+          "Import fs module for reading PID file",
+          "Add PID_FILE constant pointing to /tmp/agents-manager-daemon.pid",
+          "Update getDaemonStatus() function to check PID file as fallback",
+          "Add checkProcessRunning(pid) helper function",
+          "Update GET /api/daemon/status to return PID from file if available"
+        ],
+        "implementation_details": {
+          "checkProcessRunning": "Use process.kill(pid, 0) wrapped in try-catch. If no error, process is running. If error (ESRCH), process not found.",
+          "readPidFile": "Use fs.readFileSync(PID_FILE, 'utf-8') and parse as integer. Handle errors if file doesn't exist or is invalid.",
+          "return_pid": "When daemon is running via PID file, still return the PID in the response so UI can display it."
+        }
+      },
+      "verification": {
+        "type": "manual_test",
+        "steps": [
+          "Ensure daemon is NOT running (kill if needed)",
+          "Start daemon via start.sh",
+          "Call API: curl -H 'Authorization: Bearer dev-token-change-in-production' http://localhost:3000/api/daemon/status",
+          "Verify response shows status: 'running' and includes PID",
+          "Stop daemon and verify status returns to 'stopped'"
+        ]
+      }
+    },
+    {
+      "id": "task-3",
+      "name": "Update POST /api/daemon/start to write PID file",
+      "description": "When the daemon is started via the API endpoint, also write the PID file so the status detection works consistently. Update the POST /api/daemon/start handler to write the PID file after spawning the process.",
+      "cwd": "/root/projects/agents-manager/api",
+      "depends_on": ["task-2"],
+      "tools": ["Read", "Edit"],
+      "agent_role": "coder-backend",
+      "context": {
+        "file": "/root/projects/agents-manager/api/src/routes/daemon.ts",
+        "key_changes": [
+          "Import fs module if not already imported",
+          "After spawning daemonProcess, write its PID to the PID file",
+          "Use fs.writeFileSync(PID_FILE, String(daemonProcess.pid))",
+          "Handle cleanup of PID file in daemonProcess.on('exit') handler"
+        ]
+      },
+      "verification": {
+        "type": "manual_test",
+        "steps": [
+          "Ensure daemon is NOT running",
+          "Start daemon via API: curl -X POST -H 'Authorization: Bearer dev-token-change-in-production' http://localhost:3000/api/daemon/start",
+          "Verify PID file exists: cat /tmp/agents-manager-daemon.pid",
+          "Verify status shows running via API call"
+        ]
+      }
+    },
+    {
+      "id": "task-4",
+      "name": "Update POST /api/daemon/stop to clean up PID file",
+      "description": "When stopping the daemon via the API, also remove the PID file. Update the POST /api/daemon/stop handler to delete the PID file after killing the process.",
+      "cwd": "/root/projects/agents-manager/api",
+      "depends_on": ["task-3"],
+      "tools": ["Read", "Edit"],
+      "agent_role": "coder-backend",
+      "context": {
+        "file": "/root/projects/agents-manager/api/src/routes/daemon.ts",
+        "key_changes": [
+          "After daemonProcess.kill('SIGTERM'), also delete the PID file",
+          "Use fs.unlinkSync(PID_FILE) wrapped in try-catch to handle case where file doesn't exist",
+          "Also clean up PID file in the daemonProcess.on('exit') handler as backup"
+        ]
+      },
+      "verification": {
+        "type": "manual_test",
+        "steps": [
+          "Start daemon (either via start.sh or API)",
+          "Stop daemon via API: curl -X POST -H 'Authorization: Bearer dev-token-change-in-production' http://localhost:3000/api/daemon/stop",
+          "Verify PID file is removed: ls /tmp/agents-manager-daemon.pid (should fail)",
+          "Verify status shows stopped"
+        ]
+      }
+    },
+    {
+      "id": "task-5",
+      "name": "Test end-to-end daemon status synchronization",
+      "description": "Comprehensive testing of the daemon status synchronization fix. Test all scenarios: starting via start.sh, starting via API, stopping via API, stopping via kill, and verifying the Settings page displays correct status in all cases.",
+      "cwd": "/root/projects/agents-manager",
+      "depends_on": ["task-1", "task-2", "task-3", "task-4"],
+      "tools": ["Bash"],
+      "agent_role": "coder-backend",
+      "context": {
+        "test_scenarios": [
+          {
+            "name": "Manual start via start.sh",
+            "steps": [
+              "Ensure daemon is stopped",
+              "Run: bash start.sh",
+              "Open Settings page in browser (http://localhost:5173/settings)",
+              "Verify 'Agent Daemon: Running (PID XXXXX)' is displayed",
+              "Verify green pulsing status indicator"
+            ]
+          },
+          {
+            "name": "API start",
+            "steps": [
+              "Ensure daemon is stopped",
+              "Start via API: curl -X POST -H 'Authorization: Bearer dev-token-change-in-production' http://localhost:3000/api/daemon/start",
+              "Open Settings page",
+              "Verify status shows Running with PID"
+            ]
+          },
+          {
+            "name": "API stop",
+            "steps": [
+              "Ensure daemon is running",
+              "Stop via API: curl -X POST -H 'Authorization: Bearer dev-token-change-in-production' http://localhost:3000/api/daemon/stop",
+              "Open Settings page",
+              "Verify status shows Stopped with gray indicator"
+            ]
+          },
+          {
+            "name": "Manual stop (Ctrl+C)",
+            "steps": [
+              "Start daemon via start.sh",
+              "Press Ctrl+C to stop",
+              "Refresh Settings page",
+              "Verify status shows Stopped (after 5 second polling interval)"
+            ]
+          },
+          {
+            "name": "Process killed externally",
+            "steps": [
+              "Start daemon via start.sh",
+              "Kill process manually: kill $(cat /tmp/agents-manager-daemon.pid)",
+              "Refresh Settings page",
+              "Verify status shows Stopped within 5-10 seconds"
+            ]
+          }
+        ]
+      },
+      "verification": {
+        "type": "manual_test",
+        "steps": [
+          "Run all test scenarios above",
+          "Document any issues found",
+          "Verify Settings page always shows correct daemon status",
+          "Confirm PID file is properly created and cleaned up"
+        ]
+      }
+    }
+  ]
+}

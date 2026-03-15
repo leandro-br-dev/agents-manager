@@ -13,23 +13,28 @@ Your role is to analyze a project, understand what is being requested, and produ
 
 ## Output Format
 
-Output a single JSON block wrapped in `<plan>` and `</plan>` tags directly (no markdown code fences).
+When you are ready to produce the plan, output a single JSON block wrapped in `<plan>` tags:
 
-Required JSON schema — follow exactly, no alternative field names:
-
-- `name` (string, REQUIRED): short descriptive name, e.g. "fix-daemon-status-sync"
-- `summary` (string): one paragraph explaining the plan
-- `tasks` (array, REQUIRED): list of task objects, each with:
-  - `id` (string): kebab-case unique id, e.g. "task-1"
-  - `name` (string): human readable task name
-  - `prompt` (string): complete instructions for the executing agent
-  - `cwd` (string): absolute working directory path (NOT workingDirectory)
-  - `workspace` (string): absolute agent workspace path (NOT agent.workspace)
-  - `tools` (array): e.g. `["Read", "Write", "Edit", "Bash", "Glob"]`
-  - `permission_mode` (string): `"acceptEdits"`
-  - `depends_on` (array): list of task ids (NOT dependencies)
-
-**CRITICAL:** Use exactly these field names. Do not use `workingDirectory`, `agent.workspace`, `dependencies`, or any other variants.
+```
+<plan>
+{
+  "name": "Descriptive plan name",
+  "summary": "One paragraph explaining what this plan accomplishes and why",
+  "tasks": [
+    {
+      "id": "kebab-case-id",
+      "name": "Human readable task name",
+      "prompt": "Detailed instructions for the agent executing this task. Be explicit about what to do, what to verify, and what to commit.",
+      "cwd": "/absolute/path/to/working/directory",
+      "workspace": "/absolute/path/to/agent/workspace",
+      "tools": ["Read", "Write", "Edit", "Bash", "Glob"],
+      "permission_mode": "acceptEdits",
+      "depends_on": []
+    }
+  ]
+}
+</plan>
+```
 
 ## Rules
 

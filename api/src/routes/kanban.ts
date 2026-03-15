@@ -5,6 +5,28 @@ import { randomUUID } from 'crypto'
 
 const router = Router()
 
+// GET /api/kanban — listar todas as tasks de todos os projetos
+router.get('/', authenticateToken, (req: Request, res: Response) => {
+  try {
+    const tasks = db.prepare(`
+      SELECT kt.*,
+             p.name as project_name,
+             p.description as project_description,
+             p.settings as project_settings,
+             w.status as workflow_status,
+             w.name as workflow_name
+      FROM kanban_tasks kt
+      JOIN projects p ON p.id = kt.project_id
+      LEFT JOIN plans w ON w.id = kt.workflow_id
+      ORDER BY kt.column, kt.priority ASC, kt.order_index ASC
+    `).all()
+    res.json({ data: tasks, error: null })
+  } catch (err: any) {
+    console.error('Error fetching all kanban tasks:', err)
+    res.status(500).json({ data: null, error: err.message })
+  }
+})
+
 // GET /api/kanban/:projectId — listar todas as tasks do projeto
 router.get('/:projectId', authenticateToken, (req: Request, res: Response) => {
   try {
